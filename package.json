@@ -1,0 +1,23 @@
+{
+  "name": "@agent/web-cli",
+  "version": "0.1.0",
+  "description": "Agent Web CLI — drive Chrome from the command line",
+  "license": "MIT",
+  "bin": {
+    "awc": "./bin/awc"
+  },
+  "files": [
+    "bin/",
+    "extension/",
+    ".agents/",
+    "install-native-host.js",
+    "README.md",
+    "AGENTS.md"
+  ],
+  "scripts": {
+    "postinstall": "node install-native-host.js"
+  },
+  "engines": {
+    "node": ">=14"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "Agent Web CLI",
+  "version": "0.1.0",
+  "description": "Bridge Chrome to the local agent-web-cli (awc) host.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA9r3hNtyl27m76Ypw1rlW0jFgZK/PPRviss0DeJF9KjN4Dai70zKRamvn9mGkh5bXuX3MvVfEzSu4l33UOAQvUVytsx7lRzkteYLERY8PDEOnmpGNUic7YJtlnV31j6HTZCnTkWWWZ/ep41tKBfR9eYtP3SmZ8n5RKhEpozX01qq9Mb5gnq+G/vWUFycWc0ERHC84Ta3vhLrbmT7h+oW6lC3LtAxKC67z31SW2vHdsdhJZ3thV0WuYGnsNW7iIP+48ik6JFAm+P8eE4CqDWvKn+iRhQXOOaYW6HVPgyqnmAqXHOKZHKx46AgCJRT1USuGXrwEKx1kLue/EpBLmG7BKwIDAQAB",
+  "permissions": [
+    "activeTab",
+    "alarms",
+    "cookies",
+    "debugger",
+    "nativeMessaging",
+    "scripting",
+    "storage",
+    "tabs",
+    "webRequest"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Agent Web CLI"
+  }
+}

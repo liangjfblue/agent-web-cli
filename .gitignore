@@ -1,0 +1,15 @@
+/bin/
+/.awc/
+/.keys/
+/host-manifest/*.json
+/node_modules/
+/dist/
+*.tgz
+
+# Go
+*.test
+*.out
+
+# OS
+.DS_Store
+Thumbs.db
