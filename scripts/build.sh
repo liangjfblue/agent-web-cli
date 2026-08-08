@@ -32,6 +32,18 @@ fi
 bold "awc build — version $VERSION"
 echo "────────────────────────────────────────"
 
+# ── 步骤 0: 同步 manifest.json 版本 ──
+MANIFEST_VERSION=$(node -e "console.log(require('./extension/manifest.json').version)" 2>/dev/null || echo "")
+if [[ "$MANIFEST_VERSION" != "$VERSION" ]]; then
+    node -e "
+        const fs = require('fs');
+        const m = JSON.parse(fs.readFileSync('extension/manifest.json','utf8'));
+        m.version = process.argv[1];
+        fs.writeFileSync('extension/manifest.json', JSON.stringify(m, null, 2) + '\n');
+    " "$VERSION"
+    green "✓ synced manifest.json version → $VERSION"
+fi
+
 # ── 步骤 1: 检查 Go ──
 if ! command -v go &>/dev/null; then
     red "✗ Go not found in PATH"

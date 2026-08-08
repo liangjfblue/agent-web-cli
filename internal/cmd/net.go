@@ -135,6 +135,8 @@ func netDebug(rt *Runtime) *cobra.Command {
 			if err != nil {
 				return errExit(err)
 			}
+			// Cache response bodies to disk for later retrieval via net:body.
+			cacheBodies(data)
 			_ = json
 			if rt.JSON {
 				rt.PrintJSON(data)
@@ -211,6 +213,24 @@ func printNetRequests(reqs []map[string]any) {
 	}
 }
 
+// cacheBodies writes response bodies from net:debug to ~/.awc/net-bodies/
+// so they can be retrieved later via `awc net:body <bodyKey>`. It also strips
+// the bodyData field from the response so it doesn't clutter --json output.
+func cacheBodies(data map[string]any) {
+	reqs := mapSlice(data, "requests")
+	for _, r := range reqs {
+		bodyKey := mapStr(r, "bodyKey")
+		bodyData := mapStr(r, "bodyData")
+		if bodyKey == "" || bodyData == "" {
+			continue
+		}
+		path := filepath.Join(netBodyCacheDir(), bodyKey)
+		os.WriteFile(path, []byte(bodyData), 0o644)
+		// Remove bodyData from the response so it doesn't bloat JSON output.
+		delete(r, "bodyData")
+	}
+}
+
 // printNetDebug renders net.debug results with body previews.
 func printNetDebug(data map[string]any) {
 	reqs := mapSlice(data, "requests")
@@ -221,6 +241,9 @@ func printNetDebug(data map[string]any) {
 			fmt.Printf("    body: %s", truncate(bp, 200))
 			if mapBool(r, "bodyTruncated") {
 				fmt.Printf(" ... (truncated, full=%d)", mapInt(r, "bodyFullLen"))
+			}
+			if bk := mapStr(r, "bodyKey"); bk != "" {
+				fmt.Printf(" [key: %s]", bk)
 			}
 			fmt.Println()
 		}

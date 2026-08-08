@@ -245,33 +245,21 @@ function buildSnapshot(opts) {
   return { snapshotHash:hash, count:cands.length, elements:cands };
 }
 
-// DOMOPS_SRC is injected before the op function so the page has the shared
-// locator helpers (awcLocate/awcCollect/etc.) in scope.
-const DOMOPS_SRC = `
-${awcLocateSrc()}
-${awcCollectSrc()}
-${awcVisibleSrc()}
-${awcLabelSrc()}
-${awcSemanticSrc()}
-${awcFingerprintSrc()}
-`;
-
-function awcLocateSrc(){ return awcLocate.toString(); }
-function awcCollectSrc(){ return awcCollect.toString(); }
-function awcVisibleSrc(){ return awcVisible.toString(); }
-function awcLabelSrc(){ return awcLabel.toString(); }
-function awcSemanticSrc(){ return awcSemantic.toString(); }
-function awcFingerprintSrc(){ return awcFingerprint.toString(); }
-
-// injectDomOp runs one awc* function in the page, prepending the shared
-// helpers so the function can call awcLocate etc.
+// injectDomOp runs one awc* function in the page. It passes a self-contained
+// function to chrome.scripting.executeScript — one that includes ALL helper
+// definitions inside its body, so it doesn't depend on closures that
+// executeScript can't serialize.
+//
+// We use AWC_DOM_RUNNER below, a single function that defines every helper
+// inline and dispatches by op name. This avoids new Function() (blocked by
+// strict CSP) and avoids closure-serialization issues.
 async function injectDomOp(args, fnName) {
   const tabId = await resolveTabId(args);
   const [res] = await chrome.scripting.executeScript({
     target: { tabId },
     world: "MAIN",
-    func: new Function("opts", DOMOPS_SRC + " return " + fnName + "(opts);"),
-    args: [args]
+    func: AWC_DOM_RUNNER,
+    args: [args, fnName]
   });
   return res.result;
 }
@@ -367,6 +355,102 @@ function awcQuery(opts) {
 function awcText(opts) {
   if (opts.selector) { var el = document.querySelector(opts.selector); if (!el) throw new Error("Element not found: " + opts.selector); return { text: (el.innerText || el.textContent || "").trim() }; }
   return { text: (document.body.innerText || "").trim().slice(0, 5000) };
+}
+
+// AWC_DOM_RUNNER is the single entry point injected into pages for DOM ops.
+// It is fully self-contained: all helper functions are defined INSIDE its
+// body, so chrome.scripting.executeScript can serialize it without losing
+// closures. This avoids new Function() (blocked by strict CSP on sites like
+// GitHub) and avoids depending on outer-scope functions.
+//
+// The outer awcLocate/awcClick/etc. defined above are kept for readability and
+// testing but are NOT used for injection — this runner re-declares them inline.
+function AWC_DOM_RUNNER(opts, fnName) {
+  // ── inline helpers (copies of the outer functions) ──
+  function visible(el) {
+    if (!el || el.nodeType !== 1) return false;
+    var r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return false;
+    var s = getComputedStyle(el);
+    return s.visibility !== "hidden" && s.display !== "none" && s.opacity !== "0";
+  }
+  function label(el) {
+    if (el.id) { var lab = document.querySelector('label[for="' + CSS.escape(el.id) + '"]'); if (lab) return (lab.innerText || "").trim(); }
+    var p = el.closest("label"); return p ? (p.innerText || "").trim() : "";
+  }
+  function collect(includeHidden) {
+    var out = [], all = document.querySelectorAll("a,button,input,select,textarea,[role],[contenteditable],[tabindex],[data-testid]");
+    for (var i = 0; i < all.length; i++) {
+      var el = all[i];
+      if (!includeHidden && !visible(el)) continue;
+      out.push({ el: el, tag: el.tagName.toLowerCase(), role: el.getAttribute("role") || "", name: el.getAttribute("aria-label") || el.getAttribute("title") || "", text: (el.innerText || el.textContent || "").trim(), label: label(el), testid: el.getAttribute("data-testid") || "" });
+    }
+    return out;
+  }
+  function semantic(all, opts) {
+    var m = [];
+    for (var i = 0; i < all.length; i++) {
+      var it = all[i];
+      if (opts.role && it.role !== opts.role && it.tag !== opts.role) continue;
+      if (opts.name && !(it.name && it.name.indexOf(opts.name) >= 0)) continue;
+      if (opts.text && !(it.text && it.text.indexOf(opts.text) >= 0)) continue;
+      if (opts.label && !(it.label && it.label.indexOf(opts.label) >= 0)) continue;
+      if (opts.testid && it.testid !== opts.testid) continue;
+      m.push(it.el);
+    }
+    return m;
+  }
+  function fingerprint(items) {
+    var tc = {}, vc = 0;
+    for (var i = 0; i < items.length; i++) { tc[items[i].tag] = (tc[items[i].tag] || 0) + 1; if (visible(items[i].el)) vc++; }
+    var s = items.length + ":" + vc + ":" + JSON.stringify(tc);
+    var h = 0x811c9dc5; for (var k = 0; k < s.length; k++) { h ^= s.charCodeAt(k); h = (h * 0x01000193) >>> 0; }
+    return h.toString(16).padStart(8, "0").slice(0, 6);
+  }
+  function locate(opts) {
+    var all = collect(opts.includeHidden);
+    if (opts.anchor) {
+      var parts = String(opts.anchor).split(":");
+      var wantHash = parts[0], wantIdx = parseInt(parts[1], 10);
+      if (fingerprint(all) !== wantHash) { var e = new Error("anchor target changed (page DOM mutated)"); e.code = "ANCHOR_STALE"; throw e; }
+      if (wantIdx < 1 || wantIdx > all.length) throw new Error("anchor index out of range: " + opts.anchor);
+      return all[wantIdx - 1].el;
+    }
+    var matched = semantic(all, opts);
+    if (matched.length) { if (opts.strict && matched.length > 1) throw new Error("strict match found " + matched.length + " elements"); return matched[0]; }
+    if (opts.selector) { var n = document.querySelector(opts.selector); if (!n) throw new Error("Element not found: " + opts.selector); return n; }
+    throw new Error("no locator provided");
+  }
+  function click(opts) {
+    var el = locate(opts);
+    el.scrollIntoView({ block: "center", behavior: "instant" });
+    el.click();
+    return { clicked: true, tag: el.tagName.toLowerCase(), text: (el.innerText || "").trim().slice(0, 80) };
+  }
+  function type(opts) {
+    var el = locate(opts);
+    el.focus(); el.value = opts.value;
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    return { typed: true, tag: el.tagName.toLowerCase() };
+  }
+  function query(opts) {
+    var all = collect(opts.includeHidden), matched = semantic(all, opts);
+    if (!matched.length && opts.selector) { var ns = document.querySelectorAll(opts.selector); for (var i = 0; i < ns.length; i++) matched.push(ns[i]); }
+    return { count: matched.length, items: matched.slice(0, opts.limit || 100).map(function (el) { return { tag: el.tagName.toLowerCase(), role: el.getAttribute("role") || "", name: el.getAttribute("aria-label") || "", text: (el.innerText || el.textContent || "").trim().slice(0, 80), selector: el.id ? "#" + el.id : el.tagName.toLowerCase() }; }) };
+  }
+  function text(opts) {
+    if (opts.selector) { var el = document.querySelector(opts.selector); if (!el) throw new Error("Element not found: " + opts.selector); return { text: (el.innerText || el.textContent || "").trim() }; }
+    return { text: (document.body.innerText || "").trim().slice(0, 5000) };
+  }
+  // ── dispatch ──
+  switch (fnName) {
+    case "awcClick": return click(opts);
+    case "awcType": return type(opts);
+    case "awcQuery": return query(opts);
+    case "awcText": return text(opts);
+    default: throw new Error("unknown dom op: " + fnName);
+  }
 }
 
 // ── helpers ─────────────────────────────────────────────────────────────
@@ -550,13 +634,19 @@ async function netDebug(args) {
     await sleep(durationMs);
     chrome.debugger.onEvent.removeListener(onEvent);
 
-    // Attach bodies to their requests.
+    // Attach bodies to their requests. Include bodyKey (a hash) and the full
+    // body data so the CLI can cache it to disk for net:body retrieval.
     const result = requests.map((r) => {
       const b = bodyMap.get(r.requestId);
       if (b) {
         r.bodyPreview = b.body.slice(0, 500);
         r.bodyTruncated = b.truncated;
         if (b.truncated) r.bodyFullLen = b.fullLen;
+        // Generate a bodyKey for disk caching. The CLI writes the full body
+        // to ~/.awc/net-bodies/<bodyKey> so net:body can read it later
+        // without re-attaching the debugger.
+        r.bodyKey = "body_" + r.requestId + "_" + r.url.length;
+        r.bodyData = b.body; // full body (may be truncated to maxBody)
       }
       return r;
     });
