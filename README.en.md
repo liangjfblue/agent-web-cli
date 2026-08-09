@@ -1,10 +1,8 @@
 <div align="center">
 
-# Agent Web CLI (awc)
+<img src="assets/awc-readme-cover-v2.png" alt="Agent Web CLI cover">
 
 **English** · [简体中文](README.md)
-
-<img src="assets/awc-readme-cover-v2.png" alt="Agent Web CLI cover">
 
 </div>
 
