@@ -57,6 +57,13 @@ for entry in "${TARGETS[@]}"; do
     cp "$ROOT/install-native-host.js" "$out_dir/"
     cp "$ROOT/README.md" "$out_dir/"
 
+    # 复制 bundled skills（只随 awc 分发的核心配套 skill；demo skill 不打包）
+    # sys:setup 会把这些复制到各 AI agent 的用户级 skills 目录
+    mkdir -p "$out_dir/.agents/skills"
+    if [ -d "$ROOT/.agents/skills/awc-auth-config" ]; then
+        cp -r "$ROOT/.agents/skills/awc-auth-config" "$out_dir/.agents/skills/"
+    fi
+
     # 生成 package.json（bin 路径适配）
     bin_field='./bin/awc'
     [[ "$goos" == "windows" ]] && bin_field='./bin/awc.exe'

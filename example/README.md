@@ -70,7 +70,7 @@ awc sys:status         # 应显示 host + extension connected
 
 ```sh
 cd example/demo-admin/server && npm install && node server.js    # 端口 3000
-cd example/demo-svcgov/server && npm install && node server.js   # 端口 3001
+cd example/demo-svcgov/server && npm install && node server.js   # 127.0.0.1:3001
 ```
 
 ### 3. 把两个 CLI 安装为全局命令
@@ -83,16 +83,27 @@ which demo-admin demo-svcgov             # 确认已注册
 
 ### 4. 在 Chrome 登录 + 配置 awc 登录检测
 
-```sh
-# demo-admin：打开 http://localhost:3000/login → admin / admin123 → 登录
-awc auth:config demo-admin --url http://localhost:3000/login
+**登录**（两个 host 不同，为了 cookie 隔离）：
+- demo-admin：`http://localhost:3000/login` → admin / admin123
+- demo-svcgov：`http://127.0.0.1:3001/login` → admin / admin123
 
-# demo-svcgov：打开 http://localhost:3001/login → admin / admin123 → 登录
-awc auth:config svcgov --url http://localhost:3001/login
+> **为什么 svcgov 用 127.0.0.1？** Chrome 按 host（不分端口）存 cookie。
+> 都用 localhost 会互相覆盖。用不同 host 天然隔离。
+
+**配置登录检测**（推荐用 skill）：
+
+最简单的方式——在你的 AI agent 里说：
 ```
+帮我配一下 demo-admin 的登录，地址 http://localhost:3000/login
+帮我配一下 svcgov 的登录，地址 http://127.0.0.1:3001/login
+```
+agent 会用 `awc-auth-config` skill 自动读 cookie、识别登录态、写配置。
 
-`auth:config` 是交互式的：它读登录前 cookie → 让你登录 → 读登录后 cookie →
-自动检测哪些 cookie 是登录态信号 → 写配置。你不用知道 cookie 名字。
+或手动跑：
+```sh
+awc auth:config demo-admin --url http://localhost:3000/login
+awc auth:config svcgov --url http://127.0.0.1:3001/login
+```
 
 ---
 

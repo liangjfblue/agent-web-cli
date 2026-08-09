@@ -87,18 +87,22 @@ awc sys:status
 需要两个终端窗口（或 tab），各跑一个：
 
 ```sh
-# 终端 1 — 订单后台（端口 3000）
+# 终端 1 — 订单后台（localhost:3000）
 cd ~/ljf/code/me/web-cli/agent-web-cli
 cd example/demo-admin/server && node server.js
 ```
 
 ```sh
-# 终端 2 — 服务治理平台（端口 3001）
+# 终端 2 — 服务治理（127.0.0.1:3001，注意不是 localhost）
 cd ~/ljf/code/me/web-cli/agent-web-cli
 cd example/demo-svcgov/server && node server.js
 ```
 
 > 首次跑要在各自 server 目录先 `npm install`（装 express）。
+>
+> **为什么 svcgov 用 127.0.0.1？** Chrome 按 host（而非端口）存 cookie。
+> 两个后台都用 localhost 的话，cookie 会互相覆盖，没法同时登录。
+> 用不同 host（localhost vs 127.0.0.1）能天然隔离。
 
 ---
 
@@ -120,41 +124,54 @@ which demo-admin demo-svcgov    # 两个都应有路径
 
 ## 第 6 步：在浏览器登录两个后台
 
-用 Chrome（已装扩展那个）访问：
+用 Chrome（已装扩展那个）访问。**注意两个 host 不同**（为了 cookie 隔离）：
 
 | 后台 | URL | 账号 |
 |---|---|---|
 | 订单后台 | http://localhost:3000/login | admin / admin123 |
-| 服务治理 | http://localhost:3001/login | admin / admin123 |
+| 服务治理 | http://127.0.0.1:3001/login | admin / admin123 |
 
 各自点登录。**登录只在这里做一次**，CLI 和 agent 后面复用的就是这个登录态。
+
+> **重要**：svcgov 一定要用 `127.0.0.1` 访问，别写成 `localhost`。
+> cookie 存在哪个 host 取决于地址栏写的是什么——写错了会和 demo-admin 冲突。
 
 ---
 
 ## 第 7 步：配置 awc 登录检测
 
-让 awc 知道"怎么判断你已登录"。对每个后台跑一次（交互式）：
+让 awc 知道"怎么判断你已登录"。有**两种方式，推荐用 skill**。
+
+### 方式 A（推荐）：用 awc-auth-config skill 让 AI agent 配置
+
+awc 自带一个 `awc-auth-config` skill（`sys:setup` 时自动安装），它教 AI agent
+怎么读 cookie、识别登录态、写配置。在你的 AI agent（ZCode / Claude Code 等）里
+直接说：
+
+```
+帮我配一下 demo-admin 的登录，地址 http://localhost:3000/login
+帮我配一下 svcgov 的登录，地址 http://127.0.0.1:3001/login
+```
+
+agent 会：读浏览器 cookie → 分析哪个是登录态 cookie → 写 `~/.awc/auth/<name>.json` → 验证。
+
+**这是推荐方式**——agent 直接读 live cookie 判断，不依赖"登录前后对比"，
+不会卡在 "no new cookies" 的坑里。而且对任何真实后台都通用，你不用懂 cookie 细节。
+
+### 方式 B（手动）：跑 awc auth:config
 
 ```sh
-# 订单后台
 awc auth:config demo-admin --url http://localhost:3000/login
+awc auth:config svcgov --url http://127.0.0.1:3001/login
 ```
-它会：
-1. 打开登录页（你已登录的话先访问 /logout 退出，让它能检测到登录前后 cookie 变化）
-2. 让你登录
-3. 回终端按 Enter
-4. 自动检测哪个 cookie 是登录信号，写配置
+它通过"登录前后 cookie 对比"来检测登录信号。交互式：打开登录页 → 登录 → 按 Enter。
 
-```sh
-# 服务治理
-awc auth:config svcgov --url http://localhost:3001/login
-# 同样的流程
-```
+> **常见坑："no new cookies detected"**。这是因为你本来就登录着，cookie 没变化。
+> 解决：先访问 `/logout` 退出，再跑。或干脆用方式 A（skill），它不依赖这个机制。
 
-> **如果报 "no new cookies detected"**：说明你本来就登录着。先在浏览器访问
-> `http://localhost:3001/logout`（或 3000）退出，再跑 auth:config。
+### 验证
 
-验证配置正确：
+不管哪种方式，配完都要验证：
 ```sh
 awc auth:login demo-admin --check    # logged in ✓
 awc auth:login svcgov --check        # logged in ✓
@@ -212,7 +229,7 @@ agent 会读 skill 说明 → 知道该敲哪条命令 → 解析结果回答你
 
 演示 cookie 失效时 agent 怎么自动处理：
 
-1. 浏览器访问 `http://localhost:3001/logout`（退出，cookie 清掉）
+1. 浏览器访问 `http://127.0.0.1:3001/logout`（退出，cookie 清掉）
 2. 在 agent 里说 `查 services`
 3. agent 发现 cookie 失效 → 提示你去登录 → 后台轮询检测 → 自动恢复查询
 

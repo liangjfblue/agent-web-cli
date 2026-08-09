@@ -1,7 +1,7 @@
 // Service Governance Platform — a simulated sysop/consul-like admin panel.
 //
 // Run: npm install && node server.js
-// Login at http://localhost:3001/login (admin / admin123)
+// Login at http://127.0.0.1:3001/login (admin / admin123)
 //
 // All data is in-memory mock data — no external database needed.
 
@@ -267,6 +267,6 @@ app.get("/api/database/:table", authMiddleware, (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Service Governance running at http://localhost:${PORT}`);
-  console.log(`Login: http://localhost:${PORT}/login (admin / admin123)`);
+  console.log(`Service Governance running at http://127.0.0.1:${PORT}`);
+  console.log(`Login: http://127.0.0.1:${PORT}/login (admin / admin123)`);
 });

@@ -59,7 +59,7 @@ demo-svcgov status
 ## How it works
 
 `demo-svcgov` reads the session cookie from Chrome via
-`awc cookies:get --url http://localhost:3001 --header`, passes it as a
+`awc cookies:get --url http://127.0.0.1:3001 --header`, passes it as a
 `Cookie` header to `fetch()`, and calls the platform's APIs. If the API
 returns 401, the command prints `✗ cookie 失效或未登录` and exits.
 
@@ -84,7 +84,7 @@ come back and say "I'm logged in".
 
    > 你的 svcgov 登录已过期（cookie 失效）。
    >
-   > 请在浏览器打开 http://localhost:3001/login，用 admin / admin123 登录。
+   > 请在浏览器打开 http://127.0.0.1:3001/login，用 admin / admin123 登录。
    > 我会在后台自动检测，登录成功后立即继续查询，你无需再回复我。
 
 3. **Poll the real command, not `auth:login --check`.** Re-run the original
@@ -105,7 +105,7 @@ come back and say "I'm logged in".
    > 90 秒内仍未检测到登录。可能原因：
    > - 服务端重启过（内存 session 被清），请确认 demo-svcgov server 在运行
    > - auth 配置错误，请检查 ~/.awc/auth/svcgov.json 的
-   >   loggedInWhen.cookie.url 是否为 http://localhost:3001（auth:config 有时
+   >   loggedInWhen.cookie.url 是否为 http://127.0.0.1:3001（auth:config 有时
    >   会错误生成 https://localhost）
    > 排查后请告诉我，我再重试。
 
