@@ -51,7 +51,7 @@ awc --version          # awc version 0.1.0
 
 `sys:setup` 已帮你打开了 `chrome://extensions`。加载扩展（**唯一的手动步骤**，Chrome 不允许静默装）：
 1. 右上角打开**「开发者模式」**
-2. 点**「加载已解压的扩展程序」**
+2. 点**「加载未打包的扩展程序」**
 3. 选目录 **`~/.awc/extension`**（Finder 里 `Cmd+Shift+G` 输入这个路径直达）
 
 验证连通：

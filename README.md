@@ -36,7 +36,7 @@ curl -fsSL https://raw.githubusercontent.com/liangjfblue/agent-web-cli/main/inst
 **然后加载 Chrome 扩展**（唯一的手动步骤——Chrome 不允许静默安装未打包扩展）：
 
 1. 打开 `chrome://extensions` → 右上角开启**开发者模式**
-2. 点**加载已解压的扩展程序** → 选 `~/.awc/extension` 目录
+2. 点**加载未打包的扩展程序** → 选 `~/.awc/extension` 目录
 3. 验证：`awc sys:status`（应显示 host 已连接）
 
 ## 快速上手：复用一个登录态
