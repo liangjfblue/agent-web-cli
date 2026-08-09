@@ -9,23 +9,19 @@
 If `awc` is not yet installed, help the user set it up:
 
 ```sh
-# 1. Install (one command — postinstall auto-registers the native host)
-npm install -g @agent/web-cli
+# 1. Install (macOS/Linux — one line, no Node needed)
+curl -fsSL https://raw.githubusercontent.com/liangjfblue/agent-web-cli/main/install.sh | bash
+#    Windows: download awc-windows-amd64-<ver>.zip from Releases, or use WSL.
 
-# 2. Run setup wizard — builds, registers host, configures PATH,
-#    installs AI skills, and detects the Chrome extension
-awc sys:setup
+# 2. The installer runs `awc sys:setup` automatically, which registers the
+#    native host, configures PATH, installs AI skills, and detects the
+#    Chrome extension.
 ```
 
-> **Not published yet.** `@agent/web-cli` is not yet on the npm registry, so
-> `npm install -g @agent/web-cli` will fail with 404 until the first release.
-> Until then, install from a local checkout instead:
-> ```sh
-> cd agent-web-cli && npm install -g .   # triggers postinstall
-> # or, for development:
-> ./scripts/build.sh                     # builds ./bin/awc (add to PATH)
-> ```
-> Once published, the `npm install -g @agent/web-cli` line above works as-is.
+> **npm**: `@agent/web-cli` is not yet published to npm. Once it is,
+> `npm install -g @agent/web-cli` will work as an alternative for users who
+> already have Node. Until then, use the curl installer above, or build from
+> source: `cd agent-web-cli && ./scripts/build.sh`.
 
 After `sys:setup`, the only remaining manual step is loading the Chrome
 extension (Chrome doesn't allow silent installs of unpacked extensions).

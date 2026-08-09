@@ -1,0 +1,51 @@
+# release.yml — build all platforms + publish a GitHub Release on tag push.
+#
+# Triggered by pushing a tag matching `v*` (e.g. v0.1.0). Cross-compiles the
+# Go binaries for all supported platforms, packs them into archives, and
+# uploads them to a GitHub Release attached to that tag.
+#
+# After this completes, install.sh can resolve the release and users can run:
+#   curl -fsSL https://raw.githubusercontent.com/liangjfblue/agent-web-cli/main/install.sh | bash
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write   # required to create the release + upload assets
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Cross-build all platforms + pack archives
+        run: ./scripts/cross-build.sh --pack
+
+      - name: Verify build artifacts
+        run: |
+          ls -la dist/
+          test -n "$(ls dist/awc-*.tar.gz dist/awc-*.zip 2>/dev/null)" || {
+            echo "no archives produced"; exit 1
+          }
+
+      - name: Create GitHub Release + upload assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          # gh release create with the glob uploads every archive + checksums at once.
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --generate-notes \
+            dist/awc-*.tar.gz dist/awc-*.zip dist/checksums-*.txt

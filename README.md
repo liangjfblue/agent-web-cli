@@ -10,7 +10,33 @@ awc CLI ──AW frame (msgpack+CRC16)──► Go host ──native messaging�
 
 It does **not** start an HTTP/WebSocket server or open a local port.
 
-## Build
+## Install
+
+**macOS / Linux** (one line, no Node required):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/liangjfblue/agent-web-cli/main/install.sh | bash
+```
+
+The installer detects your platform, downloads the matching binary from the
+[latest release](https://github.com/liangjfblue/agent-web-cli/releases), installs
+to `~/.awc/bin`, adds it to PATH, and runs `awc sys:setup` to register the
+native host and guide you through loading the Chrome extension.
+
+> **Windows**: download `awc-windows-amd64-<ver>.zip` from
+> [Releases](https://github.com/liangjfblue/agent-web-cli/releases), extract,
+> and run `awc sys:setup`. Or use WSL with the command above.
+
+After install, finish setup in Chrome:
+
+```sh
+awc sys:status    # should show host + extension connected
+```
+
+`sys:setup` prints the extension folder to load at `chrome://extensions`
+(developer mode). That's the only manual step.
+
+## Build (for development)
 
 ```sh
 # 编译当前平台 (bin/awc + bin/awc-host)

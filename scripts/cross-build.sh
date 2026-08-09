@@ -104,18 +104,29 @@ EOF
     green "✓ $desc ($SIZE)"
     BUILT=$((BUILT + 1))
 
-    # 可选：打包 tarball
+    # 可选：打包归档（windows 用 zip，其余用 tar.gz）
     if [[ "${1:-}" == "--pack" ]]; then
-        (cd "$DIST" && tar czf "awc-${goos}-${goarch}-${VERSION}.tar.gz" "awc-${goos}-${goarch}")
-        green "  packed: dist/awc-${goos}-${goarch}-${VERSION}.tar.gz"
+        if [[ "$goos" == "windows" ]]; then
+            (cd "$DIST" && zip -qr "awc-${goos}-${goarch}-${VERSION}.zip" "awc-${goos}-${goarch}")
+            green "  packed: dist/awc-${goos}-${goarch}-${VERSION}.zip"
+        else
+            (cd "$DIST" && tar czf "awc-${goos}-${goarch}-${VERSION}.tar.gz" "awc-${goos}-${goarch}")
+            green "  packed: dist/awc-${goos}-${goarch}-${VERSION}.tar.gz"
+        fi
     fi
 done
+
+# 生成 checksums.txt（供 install.sh 可选校验 + GitHub Release 附件）
+if [[ "${1:-}" == "--pack" ]]; then
+    (cd "$DIST" && shasum -a 256 awc-*-*-${VERSION}.tar.gz awc-*-*-${VERSION}.zip 2>/dev/null > checksums-${VERSION}.txt || true)
+    [[ -f "$DIST/checksums-${VERSION}.txt" ]] && green "✓ wrote dist/checksums-${VERSION}.txt"
+fi
 
 echo "────────────────────────────────────────"
 bold "built $BUILT platform(s), $FAILED failed"
 echo ""
 echo "dist/:"
-ls -1 "$DIST/" 2>/dev/null | head -10
+ls -1 "$DIST/" 2>/dev/null | head -20
 echo ""
 if [[ "$BUILT" -gt 0 ]]; then
     echo "to test locally on this platform:"
