@@ -1,0 +1,12 @@
+{
+  "name": "awc-demo-svcgov",
+  "version": "0.1.0",
+  "description": "Business CLI for the demo service governance platform — reads cookies via awc",
+  "private": true,
+  "bin": {
+    "demo-svcgov": "./cli.js"
+  },
+  "scripts": {
+    "link": "npm link"
+  }
+}

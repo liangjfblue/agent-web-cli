@@ -79,6 +79,10 @@ app.get("/logout", (req, res) => {
     ? req.headers.cookie.split(";").map((s) => s.trim()).find((s) => s.startsWith("session="))
     : null;
   if (token) sessions.delete(token.split("=")[1]);
+  // Clear the browser cookie so --check (and the user's UI) actually reflect
+  // the logged-out state. Without this the cookie lingers and awc keeps
+  // reporting "logged in" even though the server session is gone.
+  res.setHeader("Set-Cookie", "session=; HttpOnly; Path=/; Max-Age=0");
   res.redirect("/login");
 });
 

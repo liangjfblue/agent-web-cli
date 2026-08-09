@@ -138,7 +138,7 @@ async function status() {
 const cmd = process.argv[2];
 
 if (!cmd) {
-  console.log(`Usage: node cli.js <command>
+  console.log(`Usage: demo-svcgov <command>
 
 Commands:
   services                         List all services and their status
@@ -148,9 +148,9 @@ Commands:
   status                           Check login state
 
 Examples:
-  node cli.js services
-  node cli.js logs --service gateway --level error
-  node cli.js table users
+  demo-svcgov services
+  demo-svcgov logs --service gateway --level error
+  demo-svcgov table users
 `);
   process.exit(0);
 }

@@ -1,7 +1,7 @@
 {
-  "name": "awc-demo-admin",
+  "name": "awc-demo-svcgov-server",
   "version": "0.1.0",
-  "description": "Demo admin panel for agent-web-cli integration",
+  "description": "Demo service governance platform server (the protected backend awc talks to)",
   "private": true,
   "scripts": {
     "start": "node server.js"

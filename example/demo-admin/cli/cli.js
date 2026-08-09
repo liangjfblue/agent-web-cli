@@ -118,7 +118,7 @@ const cmd = process.argv[2];
 const commands = { dashboard, users, status };
 
 if (!cmd || !commands[cmd]) {
-  console.log("Usage: node cli.js <command>");
+  console.log("Usage: demo-admin <command>");
   console.log("");
   console.log("Commands:");
   console.log("  dashboard    Show dashboard stats (orders, revenue, pending)");
