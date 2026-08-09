@@ -15,17 +15,17 @@ which reads cookies from Chrome via `awc` and calls the authenticated APIs.
 
 ## Commands
 
-All commands run from the `demo/` directory:
+All commands run from the project root:
 
 ```sh
 # Dashboard: orders, revenue, pending count
-node cli.js dashboard
+node demo/cli.js dashboard
 
 # User list
-node cli.js users
+node demo/cli.js users
 
 # Login status check
-node cli.js status
+node demo/cli.js status
 ```
 
 ## How it works
