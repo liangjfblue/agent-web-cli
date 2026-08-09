@@ -129,18 +129,18 @@ skill 让 agent 用自然语言查询。
 需要两个终端窗口（demo 需要 clone 仓库）：
 ```sh
 # 终端 1 — 订单后台
-cd ~/ljf/code/me/web-cli/agent-web-cli
+cd agent-web-cli                                              # 进入 clone 下来的仓库
 cd example/demo-admin/server && npm install && node server.js
 
 # 终端 2 — 服务治理（注意 127.0.0.1）
-cd ~/ljf/code/me/web-cli/agent-web-cli
+cd agent-web-cli
 cd example/demo-svcgov/server && npm install && node server.js
 ```
 
 ## D2. 安装 demo CLI
 
 ```sh
-cd ~/ljf/code/me/web-cli/agent-web-cli
+cd agent-web-cli
 cd example/demo-admin/cli && npm link && cd ../..
 cd example/demo-svcgov/cli && npm link && cd ../..
 which demo-admin demo-svcgov    # 都应有路径
