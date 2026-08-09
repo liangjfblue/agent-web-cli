@@ -17,6 +17,16 @@ npm install -g @agent/web-cli
 awc sys:setup
 ```
 
+> **Not published yet.** `@agent/web-cli` is not yet on the npm registry, so
+> `npm install -g @agent/web-cli` will fail with 404 until the first release.
+> Until then, install from a local checkout instead:
+> ```sh
+> cd agent-web-cli && npm install -g .   # triggers postinstall
+> # or, for development:
+> ./scripts/build.sh                     # builds ./bin/awc (add to PATH)
+> ```
+> Once published, the `npm install -g @agent/web-cli` line above works as-is.
+
 After `sys:setup`, the only remaining manual step is loading the Chrome
 extension (Chrome doesn't allow silent installs of unpacked extensions).
 `sys:setup` prints the exact folder path to load — guide the user there.

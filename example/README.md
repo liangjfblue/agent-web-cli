@@ -53,10 +53,18 @@ AI agent 复用你**已经登录的 Chrome**，无需 headless 浏览器，无�
 ### 1. 安装并连通 awc
 
 ```sh
-npm install -g @agent/web-cli
 awc sys:setup          # 构建、注册 host、配置 PATH、安装 skills
 awc sys:status         # 应显示 host + extension connected
 ```
+
+> **`@agent/web-cli` 尚未发布到 npm**，`npm install -g @agent/web-cli` 会 404。
+> 发布前从本仓库源码安装：
+> ```sh
+> cd agent-web-cli && npm install -g .     # 方式 A：触发 postinstall 注册 host
+> # 或
+> cd agent-web-cli && ./scripts/build.sh   # 方式 B：编译出 ./bin/awc（开发常用）
+> ```
+> 发布后 `npm install -g @agent/web-cli` 直接可用。
 
 `sys:setup` 会打印一个扩展目录路径——去 `chrome://extensions`（开启开发者模式）
 加载它。这是唯一的手动步骤。
