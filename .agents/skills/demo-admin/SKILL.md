@@ -1,6 +1,6 @@
 ---
 name: demo-admin
-description: Query the demo admin panel (orders, revenue, users) via the business CLI. Use when the user asks about dashboard data, order counts, revenue, or user lists from the demo admin system (e.g. "查一下后台数据" or "how many orders today").
+description: "[demo] Query the demo admin panel (orders, revenue, users) via the business CLI. Use when the user asks about dashboard data, order counts, revenue, or user lists from the demo admin system (e.g. \"查一下后台数据\" or \"how many orders today\")."
 ---
 
 # demo-admin skill

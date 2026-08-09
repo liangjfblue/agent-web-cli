@@ -1,6 +1,6 @@
 ---
-name: svcgov
-description: Query the service governance platform (services, logs, database) via the business CLI. Use when the user asks about service status, error logs, or database tables from the service governance system (e.g. "gateway有没有报错" or "数据库有哪些表" or "服务状态怎么样").
+name: demo-svcgov
+description: "[demo] Query the demo service governance platform (services, logs, database) via the business CLI. Use when the user asks about service status, error logs, or database tables from the demo2 service governance system (e.g. \"gateway有没有报错\" or \"数据库有哪些表\")."
 ---
 
 # svcgov skill
