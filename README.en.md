@@ -1,4 +1,12 @@
+<div align="center">
+
 # Agent Web CLI (awc)
+
+**English** · [简体中文](README.md)
+
+<img src="assets/awc-readme-cover-v2.png" alt="Agent Web CLI cover">
+
+</div>
 
 `awc` lets your **command-line tools and AI agents reuse your Chrome login
 sessions** — no headless browser, no separate browser instance, no stored

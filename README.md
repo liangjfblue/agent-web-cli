@@ -1,6 +1,12 @@
+<div align="center">
+
 # Agent Web CLI (awc)
 
 **[English](README.en.md)** · 简体中文
+
+<img src="assets/awc-readme-cover-v2.png" alt="Agent Web CLI cover">
+
+</div>
 
 `awc` 让你的**命令行工具和 AI agent 复用 Chrome 的登录态**——不需要 headless
 浏览器、不需要单独开浏览器、不需要存密码。它通过一个小扩展，从你**已经登录的
