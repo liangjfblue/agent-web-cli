@@ -1,196 +1,188 @@
 # Agent Web CLI (awc)
 
-`awc` lets your **command-line tools and AI agents reuse your Chrome login
-sessions** — no headless browser, no separate browser instance, no stored
-passwords. It reads cookies live from your already-logged-in Chrome via a
-small extension, and can also drive Chrome (tabs, DOM, network, screenshots).
+**[English](README.en.md)** · 简体中文
+
+`awc` 让你的**命令行工具和 AI agent 复用 Chrome 的登录态**——不需要 headless
+浏览器、不需要单独开浏览器、不需要存密码。它通过一个小扩展，从你**已经登录的
+Chrome** 里实时读取 cookie，还能驱动 Chrome（标签页、DOM、网络、截图）。
 
 ```
-your CLI / AI agent ──► awc ──► Chrome (the one you're already logged into)
-                            reads HttpOnly cookies via chrome.cookies API
+你的 CLI / AI agent ──► awc ──► Chrome（你已经登录的那个）
+                        通过 chrome.cookies API 读 HttpOnly cookie
 ```
 
-Typical use: you're logged into some internal site in Chrome; `awc` reads
-that session cookie so a script or agent can call the site's authenticated
-APIs — without you re-entering credentials anywhere.
+典型场景：你在 Chrome 里登录了某个内部系统；`awc` 读出那个 session cookie，
+让脚本或 agent 能调用该系统的鉴权 API——你不需要在任何地方重新输密码。
 
-## Install
+## 安装
 
-**macOS / Linux** (one line, no Node required):
+**macOS / Linux**（一行装好，不需要 Node）：
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/liangjfblue/agent-web-cli/main/install.sh | bash
 ```
 
-The installer detects your platform, downloads the binary from the
-[latest release](https://github.com/liangjfblue/agent-web-cli/releases), installs
-to `~/.awc/bin`, adds it to PATH, and runs `awc sys:setup` (registers the
-native host + installs the `awc-auth-config` skill for your AI agents).
+安装器会检测平台、从[最新 release](https://github.com/liangjfblue/agent-web-cli/releases)
+下载二进制、装到 `~/.awc/bin`、加进 PATH，并跑 `awc sys:setup`（注册 native host
++ 给你的 AI agent 装 `awc-auth-config` skill）。
 
-> **Windows**: download `awc-windows-amd64-<ver>.zip` from
-> [Releases](https://github.com/liangjfblue/agent-web-cli/releases), extract,
-> and run `awc sys:setup`. Or use WSL with the command above.
+> **Windows**：从 [Releases](https://github.com/liangjfblue/agent-web-cli/releases)
+> 下载 `awc-windows-amd64-<ver>.zip`，解压后跑 `awc sys:setup`。或用 WSL 跑上面的命令。
 
-**Then load the Chrome extension** (the only manual step — Chrome won't allow
-silent installs of unpacked extensions):
+**然后加载 Chrome 扩展**（唯一的手动步骤——Chrome 不允许静默安装未打包扩展）：
 
-1. `chrome://extensions` → enable **Developer mode**
-2. **Load unpacked** → select `~/.awc/extension`
-3. Verify: `awc sys:status` (should show the host connected)
+1. 打开 `chrome://extensions` → 右上角开启**开发者模式**
+2. 点**加载已解压的扩展程序** → 选 `~/.awc/extension` 目录
+3. 验证：`awc sys:status`（应显示 host 已连接）
 
-## Quick start: reuse a login session
+## 快速上手：复用一个登录态
 
-### Option A — let an AI agent configure it (recommended)
+### 方式 A — 让 AI agent 配置（推荐）
 
-`sys:setup` installs the `awc-auth-config` skill into your AI agent's skill
-directory (ZCode, Claude Code, Cursor, Codex). In your agent, just say:
+`sys:setup` 会把 `awc-auth-config` skill 装进你的 AI agent 目录（ZCode、Claude
+Code、Cursor、Codex）。在你的 agent 里直接说：
 
 ```
 帮我配一下 <名字> 的登录，地址 <登录页 URL>
 ```
 
-e.g. `帮我配一下 sysop 的登录，地址 https://sysop.example.com/login`
+例如：`帮我配一下 sysop 的登录，地址 https://sysop.example.com/login`
 
-The agent opens the site, reads the cookies, asks you to log in if needed,
-identifies which cookie signals "logged in", writes the config, and verifies
-it. **You never need to know cookie names.**
+agent 会打开网站、读 cookie、需要时让你登录、识别哪个 cookie 代表"已登录"、写配置、
+验证。**你完全不需要知道 cookie 名字。**
 
-### Option B — read cookies directly
+### 方式 B — 直接读 cookie
 
 ```sh
-# Read cookies as an HTTP Cookie header
+# 读 cookie，输出为 HTTP Cookie 头格式
 awc cookies:get --url "https://api.example.com" --header
 # → sessionid=abc123; token=xyz789; ...
 
-# Use it with curl / any HTTP client
+# 配合 curl / 任何 HTTP 客户端用
 COOKIE=$(awc cookies:get --url "https://api.example.com" --header)
 curl -H "Cookie: $COOKIE" "https://api.example.com/api/data"
 ```
 
-Cookies are read live from Chrome each time — never cached or stored.
+cookie 每次都从 Chrome 实时读取——不缓存、不落盘。
 
-### Check login state
+### 检查登录态
 
 ```sh
-awc auth:login <name> --check    # instant: "logged in ✓" / "not logged in ✗"
+awc auth:login <名字> --check    # 瞬时返回："logged in ✓" / "not logged in ✗"
 ```
 
-> `auth:login` (without `--check`) may block up to 120s waiting for a manual
-> login — only use it interactively, never in cron/CI/daemons.
+> `auth:login`（不带 `--check`）可能阻塞最多 120 秒等你手动登录——只在交互式
+> 场景用，**绝不要**用在 cron / CI / 后台服务里。
 
-## Commands
+## 命令一览
 
 ```
-System     sys:status | sys:doctor | sys:install | sys:uninstall
-Cookies    cookies:get [--url --name --header --json]
-Auth       auth:login <name> [--check] | auth:config <name> --url <u> | auth:list
-Tabs       tabs:list | tabs:open <url> [--foreground] | tabs:focus <id>
-DOM        dom:snapshot | dom:click | dom:type | dom:query | dom:text
-           locators: --anchor | --selector | --text | --role | --name | --label | --testid
-Screenshot shot:page [-o file] [--tab-id]
-Network    net:watch | net:debug | net:stop | net:body
-Console    console:watch [--level] | console:clear
-CDP        cdp:send <method> [--params] | cdp:listen [--event]
-Wait       wait:for [--selector | --text | --url-pattern | --status]
+系统      sys:status | sys:doctor | sys:install | sys:uninstall
+Cookie   cookies:get [--url --name --header --json]
+登录      auth:login <名字> [--check] | auth:config <名字> --url <u> | auth:list
+标签页    tabs:list | tabs:open <url> [--foreground] | tabs:focus <id>
+DOM      dom:snapshot | dom:click | dom:type | dom:query | dom:text
+          定位: --anchor | --selector | --text | --role | --name | --label | --testid
+截图      shot:page [-o 文件] [--tab-id]
+网络      net:watch | net:debug | net:stop | net:body
+控制台    console:watch [--level] | console:clear
+CDP      cdp:send <方法> [--params] | cdp:listen [--event]
+等待      wait:for [--selector | --text | --url-pattern | --status]
 ```
 
-Global flags: `--json` (raw JSON output), `--timeout 10s` (per-call).
+全局参数：`--json`（输出原始 JSON）、`--timeout 10s`（单次调用超时）。
 
-Run `awc --help` for the full list, `awc <command> --help` for any command's flags.
+跑 `awc --help` 看完整列表，`awc <命令> --help` 看某命令的参数。
 
-For the complete integration guide (cookie patterns, auth handling, every
-command), see **[AGENTS.md](AGENTS.md)** — it's written for AI agents but is
-the most thorough reference for programmatic use.
+完整的集成指南（cookie 用法、登录处理、每个命令的细节）见
+**[AGENTS.md](AGENTS.md)**——它是写给 AI agent 的，但也是最详尽的程序化使用参考。
 
-## Handling expired cookies
+## cookie 过期处理
 
-Cookies expire or get revoked. Each `awc` command stays single-purpose —
-`cookies:get` returns instantly (never auto-logs-in), so it's safe in scripts.
-Handle expiry explicitly:
+cookie 会过期或被吊销。每个 `awc` 命令都是单一职责——`cookies:get` 瞬时返回
+（绝不自动登录），所以在脚本里用是安全的。显式处理过期：
 
 ```sh
 COOKIE=$(awc cookies:get --url "https://api.example.com" --header)
 resp=$(curl -s -H "Cookie: $COOKIE" "https://api.example.com/api/data")
-# API rejected the cookie → tell the user to re-login
-echo "$resp" | grep -q '"code":401' && echo "re-login: awc auth:login <name>"
+# API 拒绝了 cookie → 提示重新登录
+echo "$resp" | grep -q '"code":401' && echo "请重新登录: awc auth:login <名字>"
 ```
 
-> **cookie existence ≠ validity.** `auth:login --check` only tests whether a
-> cookie exists in Chrome; the API response is the only authoritative test.
+> **cookie 存在 ≠ cookie 有效。** `auth:login --check` 只检查 Chrome 里有没有这个
+> cookie；API 的响应才是判断 cookie 是否有效的唯一权威。
 
-## Demos
+## Demo
 
-Two complete demos (business CLI + skill) live in [`example/`](example/) —
-an admin panel and a service-governance platform. They show the full pattern:
-awc reads the cookie → a business CLI calls authenticated APIs → a skill lets
-agents query via natural language. See
-[`example/DEMO-WALKTHROUGH.md`](example/DEMO-WALKTHROUGH.md).
+两个完整 demo（业务 CLI + skill）在 [`example/`](example/)——一个订单后台、一个
+服务治理平台。它们展示了完整模式：awc 读 cookie → 业务 CLI 调鉴权 API → skill 让
+agent 用自然语言查询。见 [`example/DEMO-WALKTHROUGH.md`](example/DEMO-WALKTHROUGH.md)。
 
 ---
 
-# For developers / contributors
+# 开发者 / 贡献者
 
-## Build from source
+## 从源码构建
 
 ```sh
-./scripts/build.sh                  # current platform → bin/awc + bin/awc-host
+./scripts/build.sh                  # 当前平台 → bin/awc + bin/awc-host
 ./scripts/build.sh --pack           # + npm tarball
-./scripts/cross-build.sh --pack     # all platforms → dist/awc-<os>-<arch>-<ver>.tar.gz
-VERSION=v0.2.0 ./scripts/build.sh   # override version
+./scripts/cross-build.sh --pack     # 全平台 → dist/awc-<os>-<arch>-<ver>.tar.gz
+VERSION=v0.2.0 ./scripts/build.sh   # 指定版本号
 ```
 
-Version source: `$VERSION` env > git tag > `package.json`. Injected via
-`-ldflags` into `awc --version`.
+版本号来源：`$VERSION` 环境变量 > git tag > `package.json`。通过 `-ldflags` 注入到
+`awc --version`。
 
-## How it works (architecture)
+## 工作原理（架构）
 
 ```
-awc CLI ──AW frame (msgpack+CRC16)──► Go host ──native messaging──► Chrome extension ──chrome.*──► page
+awc CLI ──AW 帧 (msgpack+CRC16)──► Go host ──native messaging──► Chrome 扩展 ──chrome.*──► 页面
 ```
 
-No HTTP/WebSocket server, no local port opened.
+不开 HTTP/WebSocket 服务，不开本地端口。
 
-**CLI ↔ host** (Unix socket / named pipe) — each frame:
+**CLI ↔ host**（Unix socket / named pipe）——每帧：
 ```
-| magic "AW" | ver u16=1 | payload len uint32 BE | msgpack payload | crc16 |
+| magic "AW" | ver u16=1 | payload 长度 uint32 BE | msgpack payload | crc16 |
 ```
-`crc16` = CRC-16/CCITT-FALSE over the payload, big-endian.
+`crc16` = 对 payload 算 CRC-16/CCITT-FALSE，大端。
 
-**host ↔ extension** (native messaging) — 4-byte LE length prefix + UTF-8 JSON:
+**host ↔ 扩展**（native messaging）——4 字节小端长度前缀 + UTF-8 JSON：
 ```
 → { tid, op, args? }    ← { tid, ok, data?, code?, msg? }
 ```
 
-## Project layout
+## 项目结构
 
 ```
 agent-web-cli/
-├── cmd/awc/        # CLI entry (cobra)
-├── cmd/host/       # native-messaging host entry
+├── cmd/awc/        # CLI 入口 (cobra)
+├── cmd/host/       # native-messaging host 入口
 ├── internal/
-│   ├── proto/      # AW frame codec + msgpack + CRC16
-│   ├── ipc/        # Unix socket / named pipe client
-│   ├── host/       # bridges CLI socket ↔ native messaging
-│   ├── cmd/        # cobra command tree
-│   └── install/    # native-messaging manifest + registration
-├── extension/      # Chrome extension (MV3)
+│   ├── proto/      # AW 帧编解码 + msgpack + CRC16
+│   ├── ipc/        # Unix socket / named pipe 客户端
+│   ├── host/       # 桥接 CLI socket ↔ native messaging
+│   ├── cmd/        # cobra 命令树
+│   └── install/    # native-messaging manifest + 注册
+├── extension/      # Chrome 扩展 (MV3)
 └── go.mod
 ```
 
-## Test
+## 测试
 
 ```sh
 go test ./...
 ```
 
-## Native-messaging host registration
+## native-messaging host 注册
 
-`awc sys:install` writes the Chrome native-messaging manifest:
+`awc sys:install` 写入 Chrome native-messaging manifest：
 
-| OS | Location |
+| 系统 | 位置 |
 |---|---|
 | macOS | `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.awc.host.json` |
 | Linux | `~/.config/google-chrome/NativeMessagingHosts/com.awc.host.json` |
-| Windows | registry `HKCU\Software\Google\Chrome\NativeMessagingHosts\com.awc.host` |
+| Windows | 注册表 `HKCU\Software\Google\Chrome\NativeMessagingHosts\com.awc.host` |
 
-Uninstall with `awc sys:uninstall`.
+卸载用 `awc sys:uninstall`。
