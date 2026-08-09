@@ -398,17 +398,20 @@ func runAuthConfig(rt *Runtime, name, loginURL string) error {
 
 	// Auto-pick: prefer session/token cookies, fall back to first.
 	picked := diffs[0]
-	pickedDomain := picked.Domain
 	for _, d := range diffs {
 		lower := strings.ToLower(d.Name)
 		if strings.Contains(lower, "sess") || strings.Contains(lower, "token") || strings.Contains(lower, "auth") {
 			picked = d
-			pickedDomain = d.Domain
 			break
 		}
 	}
 
-	cookieURL := "https://" + strings.TrimPrefix(pickedDomain, ".")
+	// The cookie URL must carry the same origin (scheme + host + port) used to
+	// read the cookies above, so chrome.cookies.get hits the same store entry.
+	// Reuse siteURL (= originOf(loginURL)) rather than reconstructing from the
+	// cookie's domain: cookie domains carry no port and we'd otherwise hardcode
+	// https, which breaks http + non-default-port sites (e.g. localhost:3001).
+	cookieURL := siteURL
 	fmt.Printf("  ✓ detected login cookie: %s\n\n", picked.Name)
 
 	// Write config.
