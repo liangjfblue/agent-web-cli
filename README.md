@@ -92,7 +92,8 @@ CLI 而随意修改真实数据。Cookie、Token、JWT 和 `cookieHeader` 不能
 
 - [`demo-admin`](example/demo-admin/)：模拟订单后台。
 - [`demo-svcgov`](example/demo-svcgov/)：模拟服务治理后台。
-- [`ruoyi-cli`](example/ruoyi-cli/)：真实 RuoYi 用户/角色查询和登录恢复。
+- [`ruoyi-cli`](example/ruoyi-cli/)：基于 [RuoYi 在线演示站](https://vue.ruoyi.vip/index)
+  的真实用户/角色查询和登录恢复。
 
 ---
 

@@ -100,7 +100,8 @@ Examples:
 
 - [`demo-admin`](example/demo-admin/): simulated order administration.
 - [`demo-svcgov`](example/demo-svcgov/): simulated service governance.
-- [`ruoyi-cli`](example/ruoyi-cli/): real RuoYi user/role queries and login recovery.
+- [`ruoyi-cli`](example/ruoyi-cli/): real user/role queries and login recovery
+  against the [RuoYi online demo](https://vue.ruoyi.vip/index).
 
 ---
 
