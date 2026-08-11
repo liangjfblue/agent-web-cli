@@ -34,18 +34,25 @@ var Version = "0.1.1-dev"
 
 // Host owns the socket listener and the extension channel.
 type Host struct {
-	socketPath    string
-	listener      net.Listener
-	logf          func(format string, args ...any)
-	profileID     string
-	helloCh       chan ChromeReply
-	extensionDone chan struct{}
-	extensionOut  io.Writer
-	statusMu      sync.RWMutex
-	statusData    map[string]any
+	socketPath      string
+	listener        net.Listener
+	logf            func(format string, args ...any)
+	profileID       string
+	helloCh         chan ChromeReply
+	extensionDone   chan struct{}
+	extensionOut    io.Writer
+	extensionWrites chan extensionWrite
+	writerDone      chan struct{}
+	statusMu        sync.RWMutex
+	statusData      map[string]any
 
 	mu      sync.Mutex
 	pending map[string]chan proto.Response // tid -> waiter
+}
+
+type extensionWrite struct {
+	request ChromeRequest
+	result  chan error
 }
 
 // Run starts the host. It blocks until ctx is cancelled or a fatal error
@@ -56,13 +63,16 @@ func Run(ctx context.Context) error {
 
 func run(ctx context.Context, extensionIn io.Reader, extensionOut io.Writer) error {
 	h := &Host{
-		pending:       make(map[string]chan proto.Response),
-		helloCh:       make(chan ChromeReply, 1),
-		extensionDone: make(chan struct{}),
-		extensionOut:  extensionOut,
-		statusData:    map[string]any{},
-		logf:          func(format string, args ...any) {}, // stderr by default
+		pending:         make(map[string]chan proto.Response),
+		helloCh:         make(chan ChromeReply, 1),
+		extensionDone:   make(chan struct{}),
+		extensionOut:    extensionOut,
+		extensionWrites: make(chan extensionWrite),
+		writerDone:      make(chan struct{}),
+		statusData:      map[string]any{},
+		logf:            func(format string, args ...any) {}, // stderr by default
 	}
+	go h.writeExtensionLoop(ctx)
 	// Only log to stderr: stdout is reserved for native-messaging frames.
 	if os.Getenv("AWC_HOST_DEBUG") != "" {
 		h.logf = func(format string, args ...any) {
@@ -162,7 +172,7 @@ func (h *Host) handleCLI(conn net.Conn) {
 	h.register(req.Tid, ch)
 	defer h.unregister(req.Tid)
 
-	if err := WriteChromeRequest(h.extensionOut, ChromeRequest{
+	if err := h.writeExtension(ChromeRequest{
 		Tid:  req.Tid,
 		Op:   req.Op,
 		Args: req.Args,
@@ -184,6 +194,42 @@ func (h *Host) handleCLI(conn net.Conn) {
 		}
 	case <-time.After(wait):
 		h.writeError(conn, req.Tid, "TIMEOUT", "extension did not respond in time")
+	}
+}
+
+// writeExtensionLoop is the only goroutine that writes to Chrome's native
+// messaging stdout. A complete length-prefixed frame is therefore emitted
+// before the next request starts writing.
+func (h *Host) writeExtensionLoop(ctx context.Context) {
+	defer close(h.writerDone)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-h.extensionDone:
+			return
+		case write := <-h.extensionWrites:
+			write.result <- WriteChromeRequest(h.extensionOut, write.request)
+		}
+	}
+}
+
+func (h *Host) writeExtension(request ChromeRequest) error {
+	write := extensionWrite{request: request, result: make(chan error, 1)}
+	select {
+	case h.extensionWrites <- write:
+	case <-h.extensionDone:
+		return io.ErrClosedPipe
+	case <-h.writerDone:
+		return io.ErrClosedPipe
+	}
+	select {
+	case err := <-write.result:
+		return err
+	case <-h.extensionDone:
+		return io.ErrClosedPipe
+	case <-h.writerDone:
+		return io.ErrClosedPipe
 	}
 }
 

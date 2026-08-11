@@ -14,17 +14,14 @@ func registerCookies(root *cobra.Command, rt *Runtime) {
 
 func cookiesGet(rt *Runtime) *cobra.Command {
 	var url, name string
-	var header, redact bool
+	var header, redact, all bool
 	c := &cobra.Command{
 		Use:   "cookies:get",
 		Short: "Read cookies for a URL or the active tab",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			args_ := map[string]any{}
-			if url != "" {
-				args_["url"] = url
-			}
-			if name != "" {
-				args_["name"] = name
+			args_, err := cookieRequestArgs(url, name, all)
+			if err != nil {
+				return errExit(err)
 			}
 			data, err := rt.Call("cookies.getAll", args_)
 			if err != nil {
@@ -62,10 +59,30 @@ func cookiesGet(rt *Runtime) *cobra.Command {
 		},
 	}
 	c.Flags().StringVar(&url, "url", "", "read cookies for this URL")
+	c.Flags().BoolVar(&all, "all", false, "read all cookies (cannot be combined with --url)")
 	c.Flags().StringVar(&name, "name", "", "filter by cookie name")
 	c.Flags().BoolVar(&header, "header", false, "output as Cookie request header")
 	c.Flags().BoolVar(&redact, "redact", false, "hide cookie values")
 	return c
+}
+
+func cookieRequestArgs(url, name string, all bool) (map[string]any, error) {
+	if url != "" && all {
+		return nil, fmt.Errorf("--url and --all cannot be used together")
+	}
+	args := map[string]any{}
+	switch {
+	case url != "":
+		args["url"] = url
+	case all:
+		args["all"] = true
+	default:
+		args["activeTab"] = true
+	}
+	if name != "" {
+		args["name"] = name
+	}
+	return args, nil
 }
 
 // printCookiesTable renders a compact table of cookies.

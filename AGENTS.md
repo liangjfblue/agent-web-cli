@@ -70,7 +70,8 @@ Output: a single line like `sessionid=abc123; token=xyz789; ...` — pass it as
 the `Cookie` header to curl/requests/fetch/etc.
 
 **Flags:**
-- `--url <url>` — read cookies for this domain (required)
+- `--url <url>` — read cookies for this URL (defaults to the active tab)
+- `--all` — explicitly read all cookies; cannot be combined with `--url`
 - `--header` — output as `name=value; name=value` (for HTTP)
 - `--name <name>` — filter to one cookie
 - `--json` — structured output with domain, path, expiry, etc.

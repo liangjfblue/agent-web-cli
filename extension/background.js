@@ -135,7 +135,15 @@ const HANDLERS = {
 
   "cookies.getAll": async (args) => {
     const details = {};
-    if (args.url) details.url = args.url;
+    if (args.url) {
+      details.url = args.url;
+    } else if (!args.all) {
+      const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!active || !active.url || !/^https?:\/\//i.test(active.url)) {
+        throw opError("BAD_ARGS", "the active tab has no http(s) URL; pass --url or --all");
+      }
+      details.url = active.url;
+    }
     if (args.name) {
       // chrome.cookies.getAll has no name filter; filter client-side.
       const all = await chrome.cookies.getAll(details);

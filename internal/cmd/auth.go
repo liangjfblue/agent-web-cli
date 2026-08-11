@@ -345,7 +345,7 @@ func runAuthConfig(rt *Runtime, name, loginURL string) error {
 	if err != nil {
 		return errExit(err)
 	}
-	before := cookieNameSet(mapSlice(beforeData, "cookies"))
+	before := mapSlice(beforeData, "cookies")
 	fmt.Printf("%d cookies\n\n", len(before))
 
 	// ── Step 2: wait for the user to log in ──
@@ -367,23 +367,11 @@ func runAuthConfig(rt *Runtime, name, loginURL string) error {
 	after := mapSlice(afterData, "cookies")
 	fmt.Printf("%d cookies\n\n", len(after))
 
-	// Find new or changed cookies.
-	type diff struct {
-		Name   string
-		Domain string
-		Status string // "new" or "changed"
-	}
-	var diffs []diff
-	for _, c := range after {
-		cname := mapStr(c, "name")
-		cdom := mapStr(c, "domain")
-		if _, existed := before[cname]; !existed {
-			diffs = append(diffs, diff{Name: cname, Domain: cdom, Status: "new"})
-		}
-	}
+	// Find new cookies and existing cookies whose values changed during login.
+	diffs := diffCookies(before, after)
 
 	if len(diffs) == 0 {
-		fmt.Println("  ⚠ no new cookies detected after login.")
+		fmt.Println("  ⚠ no new or changed cookies detected after login.")
 		fmt.Println("    you may already have been logged in, or the login failed.")
 		fmt.Println("    try logging out first, then re-run this command.")
 		fmt.Println()
@@ -391,7 +379,7 @@ func runAuthConfig(rt *Runtime, name, loginURL string) error {
 	}
 
 	// ── Step 4: pick the login cookie and write config ──
-	fmt.Printf("  step 4/4: %d cookie(s) appeared after login:\n\n", len(diffs))
+	fmt.Printf("  step 4/4: %d cookie candidate(s) detected after login:\n\n", len(diffs))
 	for i, d := range diffs {
 		fmt.Printf("    [%d] %s  (%s, domain: %s)\n", i+1, d.Name, d.Status, d.Domain)
 	}
@@ -458,13 +446,46 @@ func runAuthConfig(rt *Runtime, name, loginURL string) error {
 	return nil
 }
 
-// cookieNameSet builds a set of cookie names for quick diffing.
-func cookieNameSet(cookies []map[string]any) map[string]bool {
-	set := make(map[string]bool, len(cookies))
-	for _, c := range cookies {
-		set[mapStr(c, "name")] = true
+type cookieDiff struct {
+	Name   string
+	Domain string
+	Status string // "new" or "changed"
+}
+
+// diffCookies compares cookie values in memory. Values are never returned,
+// logged, or persisted; only the cookie identity and change status escape.
+func diffCookies(before, after []map[string]any) []cookieDiff {
+	values := make(map[string]string, len(before))
+	for _, c := range before {
+		values[cookieIdentity(c)] = mapStr(c, "value")
 	}
-	return set
+	var diffs []cookieDiff
+	for _, c := range after {
+		old, existed := values[cookieIdentity(c)]
+		status := ""
+		if !existed {
+			status = "new"
+		} else if old != mapStr(c, "value") {
+			status = "changed"
+		}
+		if status != "" {
+			diffs = append(diffs, cookieDiff{
+				Name:   mapStr(c, "name"),
+				Domain: mapStr(c, "domain"),
+				Status: status,
+			})
+		}
+	}
+	return diffs
+}
+
+func cookieIdentity(c map[string]any) string {
+	return strings.Join([]string{
+		mapStr(c, "domain"),
+		mapStr(c, "path"),
+		mapStr(c, "name"),
+		mapStr(c, "storeId"),
+	}, "\x00")
 }
 
 // originOf extracts the origin (scheme + host) from a URL.

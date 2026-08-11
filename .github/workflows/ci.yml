@@ -28,4 +28,4 @@ jobs:
       - run: go vet ./...
       - run: go build ./cmd/awc
       - run: go build ./cmd/host
-      - run: node --test example/demo-admin/cli/test/cli.test.js example/demo-svcgov/cli/test/cli.test.js example/ruoyi-cli/test/cli.test.js
+      - run: node --test extension/background.test.js example/demo-admin/cli/test/cli.test.js example/demo-svcgov/cli/test/cli.test.js example/ruoyi-cli/test/cli.test.js
