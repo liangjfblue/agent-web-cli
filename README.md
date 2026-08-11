@@ -22,7 +22,7 @@
 
 Agent 会下载或构建 `awc`、注册 Native Messaging Host，并安装两个配套 skill：
 
-- `awc-auth-config`：为业务网站配置浏览器登录态。
+- `awc-auth-config`：识别网站的登录标志并生成认证配置。
 - `awc-build-business-cli`：根据业务需求生成 CLI + 业务 skill。
 
 Chrome 不允许静默安装未打包扩展，因此你只需要手动完成一次：
@@ -94,6 +94,48 @@ CLI 而随意修改真实数据。Cookie、Token、JWT 和 `cookieHeader` 不能
 - [`demo-svcgov`](example/demo-svcgov/)：模拟服务治理后台。
 - [`ruoyi-cli`](example/ruoyi-cli/)：基于 [RuoYi 在线演示站](https://vue.ruoyi.vip/index)
   的真实用户/角色查询和登录恢复。
+
+## 3. 实现原理
+
+整个流程分为首次封装和日常调用两部分。认证配置只记录 Cookie 名称、URL 和登录规则；
+Cookie、Token 等凭据始终保留在 Chrome 中，只在业务 CLI 进程内短暂使用。
+
+```mermaid
+flowchart TB
+    subgraph BUILD["首次封装业务系统"]
+        U["用户描述目标页面和所需操作"] --> BUILDER["awc-build-business-cli"]
+        BUILDER --> READY["检查 awc、扩展和业务范围"]
+        READY --> PROFILE{"已有匹配的认证配置？"}
+        PROFILE -- "否" --> AUTH["awc-auth-config"]
+        AUTH --> DIFF["对比登录前后 Cookie<br/>生成 auth.json"]
+        PROFILE -- "是" --> DISCOVER["分析指定范围内的 HTTP API"]
+        DIFF --> DISCOVER
+        DISCOVER --> GENERATE["生成业务 CLI、业务 skill 和测试"]
+        GENERATE --> VERIFY["验证正常调用、登录恢复和一次重试"]
+    end
+
+    subgraph RUN["日常业务调用"]
+        REQUEST["自然语言业务请求"] --> BSKILL["业务 skill<br/>选择命令并转换参数"]
+        BSKILL --> BCLI["业务 CLI"]
+        BCLI --> SESSION["awc session:acquire"]
+        SESSION --> CONFIG["读取 auth.json"]
+        CONFIG --> BRIDGE["awc-host + Chrome 扩展<br/>Native Messaging"]
+        BRIDGE --> LOGIN{"loggedInWhen 登录标志存在？"}
+        LOGIN -- "否" --> INTERACTIVE["业务 CLI login<br/>打开 Chrome 等待用户登录"]
+        LOGIN -- "是" --> CREDENTIALS["获取 API 域 Cookie"]
+        INTERACTIVE --> CREDENTIALS
+        CREDENTIALS --> API["业务 CLI 调用业务 HTTP API"]
+        API --> ACCEPTED{"API 接受凭据？"}
+        ACCEPTED -- "是" --> RESULT["返回业务结果"]
+        ACCEPTED -- "否：401/403" --> REFRESH["业务 CLI login --refresh<br/>清除失效 Cookie 并重新登录"]
+        REFRESH --> RETRY["原业务命令只重试一次"]
+        RETRY --> SESSION
+    end
+
+    GENERATE -. "生成产物" .-> BSKILL
+    GENERATE -. "生成产物" .-> BCLI
+    DIFF -. "认证规则" .-> CONFIG
+```
 
 ---
 

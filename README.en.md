@@ -24,7 +24,7 @@ When done, tell me the Chrome extension directory and the one manual step I must
 The agent downloads or builds `awc`, registers the Native Messaging Host, and
 installs two companion skills:
 
-- `awc-auth-config` configures browser login for a business site.
+- `awc-auth-config` identifies the site's login signal and generates an auth profile.
 - `awc-build-business-cli` generates a CLI and business skill for requested operations.
 
 Chrome does not allow silent installation of unpacked extensions, so you
@@ -102,6 +102,49 @@ Examples:
 - [`demo-svcgov`](example/demo-svcgov/): simulated service governance.
 - [`ruoyi-cli`](example/ruoyi-cli/): real user/role queries and login recovery
   against the [RuoYi online demo](https://vue.ruoyi.vip/index).
+
+## 3. How it works
+
+The flow has two phases: generating an integration and using it day to day.
+The auth profile stores only Cookie names, URLs, and login rules. Cookie and
+Token values remain in Chrome and are used only briefly inside the business CLI process.
+
+```mermaid
+flowchart TB
+    subgraph BUILD["Generate the business integration"]
+        U["User describes the target page and operations"] --> BUILDER["awc-build-business-cli"]
+        BUILDER --> READY["Check awc, the extension, and requested scope"]
+        READY --> PROFILE{"Matching auth profile exists?"}
+        PROFILE -- "No" --> AUTH["awc-auth-config"]
+        AUTH --> DIFF["Compare Cookies before and after login<br/>generate auth.json"]
+        PROFILE -- "Yes" --> DISCOVER["Analyze only the requested HTTP APIs"]
+        DIFF --> DISCOVER
+        DISCOVER --> GENERATE["Generate the business CLI, skill, and tests"]
+        GENERATE --> VERIFY["Verify normal calls, login recovery, and one retry"]
+    end
+
+    subgraph RUN["Use the business integration"]
+        REQUEST["Natural-language business request"] --> BSKILL["Business skill<br/>select command and translate arguments"]
+        BSKILL --> BCLI["Business CLI"]
+        BCLI --> SESSION["awc session:acquire"]
+        SESSION --> CONFIG["Read auth.json"]
+        CONFIG --> BRIDGE["awc-host + Chrome extension<br/>Native Messaging"]
+        BRIDGE --> LOGIN{"loggedInWhen login signal exists?"}
+        LOGIN -- "No" --> INTERACTIVE["Business CLI login<br/>open Chrome and wait for the user"]
+        LOGIN -- "Yes" --> CREDENTIALS["Acquire Cookies for the API origin"]
+        INTERACTIVE --> CREDENTIALS
+        CREDENTIALS --> API["Business CLI calls the business HTTP API"]
+        API --> ACCEPTED{"API accepts the credentials?"}
+        ACCEPTED -- "Yes" --> RESULT["Return the business result"]
+        ACCEPTED -- "No: 401/403" --> REFRESH["Business CLI login --refresh<br/>clear rejected Cookie and sign in again"]
+        REFRESH --> RETRY["Retry the original command once"]
+        RETRY --> SESSION
+    end
+
+    GENERATE -. "generated artifact" .-> BSKILL
+    GENERATE -. "generated artifact" .-> BCLI
+    DIFF -. "auth rules" .-> CONFIG
+```
 
 ---
 
