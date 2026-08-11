@@ -1,0 +1,31 @@
+"use strict";
+
+// Add business-specific boolean flags here. `json` is available by default.
+const BOOLEAN_OPTIONS = new Set(["json"]);
+
+function buildAuthHeaders(session) {
+  // Replace this only when the observed API requires a token header instead.
+  return { Cookie: session.cookieHeader };
+}
+
+function isAuthRejected({ response, body }) {
+  // Extend this with the observed application-level login rejection code.
+  return response.status === 401 || response.status === 403 || body?.code === 401;
+}
+
+function printBusinessHelp() {
+  console.log("  No business commands have been generated yet.");
+}
+
+async function runBusinessCommand(_parsed, _context) {
+  // Implement only commands backed by observed APIs and requested by the user.
+  return false;
+}
+
+module.exports = {
+  BOOLEAN_OPTIONS,
+  buildAuthHeaders,
+  isAuthRejected,
+  printBusinessHelp,
+  runBusinessCommand,
+};

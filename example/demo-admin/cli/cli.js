@@ -12,48 +12,43 @@
 //   node cli.js users        # list users
 //   node cli.js status       # check if logged in
 
-const { execSync } = require("child_process");
+const { execFileSync } = require("child_process");
 
 const BASE_URL = "http://localhost:3000";
 const AUTH_NAME = "demo-admin";
 
-// ── Read cookie from Chrome via awc ──
-function getCookie() {
+function acquireSession() {
   try {
-    return execSync(`awc cookies:get --url ${BASE_URL} --header`, {
+    const output = execFileSync("awc", [
+      "session:acquire", AUTH_NAME,
+      "--url", BASE_URL,
+      "--json",
+    ], {
       encoding: "utf8",
       timeout: 10000,
-    }).trim();
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    return JSON.parse(output).data;
   } catch (err) {
-    console.error("✗ 无法读取 cookie — awc 是否已启动？");
-    console.error("  运行: awc sys:status 检查连接");
+    if (err.status === 10) {
+      console.error("not logged in");
+      console.error(`  run: awc session:acquire ${AUTH_NAME} --url ${BASE_URL} --interactive --json`);
+    } else {
+      console.error("unable to acquire a browser session; run: awc sys:status");
+    }
     process.exit(1);
   }
 }
 
-// ── Check login state ──
-function checkLogin() {
-  try {
-    const out = execSync(`awc auth:login ${AUTH_NAME} --check`, {
-      encoding: "utf8",
-      timeout: 10000,
-    }).trim();
-    return out.includes("logged in");
-  } catch {
-    return false;
-  }
-}
-
-// ── Call API with cookie ──
 async function callAPI(path) {
-  const cookie = getCookie();
+  const session = acquireSession();
   const resp = await fetch(`${BASE_URL}${path}`, {
-    headers: { Cookie: cookie },
+    headers: { Cookie: session.cookieHeader },
   });
 
-  if (resp.status === 401) {
-    console.error("✗ cookie 失效或未登录");
-    console.error(`  重新登录: awc auth:login ${AUTH_NAME}`);
+  if (resp.status === 401 || resp.status === 403) {
+    console.error("browser credentials were rejected by the API");
+    console.error(`  run: awc session:acquire ${AUTH_NAME} --url ${BASE_URL} --interactive --refresh --json`);
     process.exit(1);
   }
 
@@ -63,12 +58,6 @@ async function callAPI(path) {
 // ── Commands ──
 
 async function dashboard() {
-  if (!checkLogin()) {
-    console.error("✗ 未登录，请先登录:");
-    console.error(`  awc auth:login ${AUTH_NAME}`);
-    process.exit(1);
-  }
-
   const data = await callAPI("/api/dashboard");
   console.log("📊 Dashboard");
   console.log("─────────────────────");
@@ -80,12 +69,6 @@ async function dashboard() {
 }
 
 async function users() {
-  if (!checkLogin()) {
-    console.error("✗ 未登录，请先登录:");
-    console.error(`  awc auth:login ${AUTH_NAME}`);
-    process.exit(1);
-  }
-
   const data = await callAPI("/api/users");
   console.log(`👥 Users (${data.total})`);
   console.log("─────────────────────────────────────────");
@@ -98,18 +81,8 @@ async function users() {
 }
 
 async function status() {
-  const loggedIn = checkLogin();
-  if (loggedIn) {
-    console.log("✓ 已登录 (demo-admin)");
-    // Also show the cookie exists
-    const cookie = getCookie();
-    if (cookie) {
-      console.log(`  cookie: ${cookie.slice(0, 30)}...`);
-    }
-  } else {
-    console.log("✗ 未登录");
-    console.log(`  登录: awc auth:login ${AUTH_NAME}`);
-  }
+  const session = acquireSession();
+  console.log(`session available (${session.profileId || "legacy profile"})`);
 }
 
 // ── Main ──

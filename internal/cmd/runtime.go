@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/agent/web-cli/internal/ipc"
@@ -19,16 +20,22 @@ import (
 
 // Runtime carries shared CLI state and helpers used by every command.
 type Runtime struct {
-	JSON    bool
-	Timeout time.Duration
-	client  *ipc.Client
+	JSON     bool
+	Timeout  time.Duration
+	Profile  string
+	client   *ipc.Client
+	selected *ipc.ProfileRegistration
 }
 
 // Call sends op to the host and returns the data map. It renders a friendly
 // setup error when the socket is not reachable.
 func (r *Runtime) Call(op string, args map[string]any) (map[string]any, error) {
 	if r.client == nil {
-		r.client = &ipc.Client{}
+		endpoint, err := r.resolveEndpoint()
+		if err != nil {
+			return nil, err
+		}
+		r.client = &ipc.Client{Endpoint: endpoint}
 	}
 	ctx := context.Background()
 	resp, err := r.client.Call(ctx, op, args, r.timeout())
@@ -40,6 +47,46 @@ func (r *Runtime) Call(op string, args map[string]any) (map[string]any, error) {
 		return nil, err
 	}
 	return resp.Data, nil
+}
+
+func (r *Runtime) resolveEndpoint() (string, error) {
+	profiles, err := ipc.ActiveProfiles(context.Background())
+	if err != nil {
+		return "", err
+	}
+	selector := r.Profile
+	if selector == "" {
+		selector = os.Getenv("AWC_PROFILE")
+	}
+	if selector == "" {
+		if cfg := readConfig(); cfg != nil {
+			selector = cfg.DefaultProfile
+		}
+	}
+	if selector != "" {
+		p, err := ipc.SelectProfile(profiles, selector)
+		if err != nil {
+			return "", NewExitError(ExitProfileNotFound, err)
+		}
+		r.selected = &p
+		return p.Endpoint, nil
+	}
+	switch len(profiles) {
+	case 0:
+		return ipc.Endpoint(), nil
+	case 1:
+		r.selected = &profiles[0]
+		return profiles[0].Endpoint, nil
+	default:
+		return "", NewExitError(ExitProfileRequired, fmt.Errorf("multiple browser profiles are connected; pass --profile <id|name> or set a default with profiles:default"))
+	}
+}
+
+func (r *Runtime) selectedProfileID() string {
+	if r.selected == nil {
+		return ""
+	}
+	return r.selected.ProfileID
 }
 
 func (r *Runtime) timeout() time.Duration {
@@ -67,6 +114,7 @@ func setupHints() string {
 func (r *Runtime) rootFlags(c *cobra.Command) {
 	c.PersistentFlags().BoolVar(&r.JSON, "json", false, "output raw JSON")
 	c.PersistentFlags().DurationVar(&r.Timeout, "timeout", 0, "per-call timeout (e.g. 10s)")
+	c.PersistentFlags().StringVar(&r.Profile, "profile", "", "Chrome profile id or name (overrides AWC_PROFILE and the configured default)")
 }
 
 // LocatorOptions groups all element-location flags shared by dom commands.

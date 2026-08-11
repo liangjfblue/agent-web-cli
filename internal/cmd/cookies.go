@@ -32,6 +32,24 @@ func cookiesGet(rt *Runtime) *cobra.Command {
 			}
 			cookies := mapSlice(data, "cookies")
 			if rt.JSON {
+				if redact {
+					redacted := make(map[string]any, len(data))
+					for key, value := range data {
+						redacted[key] = value
+					}
+					redactedCookies := make([]map[string]any, 0, len(cookies))
+					for _, cookie := range cookies {
+						copyCookie := make(map[string]any, len(cookie))
+						for key, value := range cookie {
+							copyCookie[key] = value
+						}
+						copyCookie["value"] = "<redacted>"
+						redactedCookies = append(redactedCookies, copyCookie)
+					}
+					redacted["cookies"] = redactedCookies
+					rt.PrintJSON(redacted)
+					return nil
+				}
 				rt.PrintJSON(data)
 				return nil
 			}

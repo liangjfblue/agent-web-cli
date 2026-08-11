@@ -49,14 +49,15 @@ type AuthLocator struct {
 // needed. All present conditions must be satisfied.
 //
 // Examples:
-//   // GitHub: a "logged_in" cookie exists
-//   { "cookie": { "url": "https://github.com", "name": "logged_in" } }
 //
-//   // Generic: URL no longer on the login page
-//   { "urlNotContains": "/login" }
+//	// GitHub: a "logged_in" cookie exists
+//	{ "cookie": { "url": "https://github.com", "name": "logged_in" } }
 //
-//   // Generic: page no longer shows a "Sign in" button
-//   { "noButtonText": "Sign in" }
+//	// Generic: URL no longer on the login page
+//	{ "urlNotContains": "/login" }
+//
+//	// Generic: page no longer shows a "Sign in" button
+//	{ "noButtonText": "Sign in" }
 type AuthCondition struct {
 	URLNotContains string      `json:"urlNotContains,omitempty" msgpack:"urlNotContains,omitempty"`
 	NoButtonText   string      `json:"noButtonText,omitempty" msgpack:"noButtonText,omitempty"`
@@ -115,7 +116,17 @@ func authLogin(rt *Runtime) *cobra.Command {
 			}
 
 			// Full login: CLI-driven loop with live feedback.
-			return runLoginLoop(rt, cfg, name)
+			data, err := runLoginLoop(rt, cfg, name)
+			if err != nil {
+				if rt.JSON && data != nil {
+					rt.PrintJSON(data)
+				}
+				return err
+			}
+			if rt.JSON {
+				rt.PrintJSON(data)
+			}
+			return nil
 		},
 	}
 	c.Flags().BoolVar(&checkOnly, "check", false, "only check login status, do not trigger login")
@@ -149,16 +160,20 @@ func condToMap(c AuthCondition) map[string]any {
 // live feedback. Each iteration: (1) check status, (2) if not logged in,
 // ask the extension to attempt login actions (click buttons/SSO), (3) wait
 // and repeat until logged in or timeout.
-func runLoginLoop(rt *Runtime, cfg AuthConfig, name string) error {
+func runLoginLoop(rt *Runtime, cfg AuthConfig, name string) (map[string]any, error) {
 	totalMs := parseDurationMs(orDefault(cfg.Timeout, "120s"))
 	intervalMs := parseDurationMs(orDefault(cfg.Interval, "3s"))
 	deadline := time.Now().Add(time.Duration(totalMs) * time.Millisecond)
 	interval := time.Duration(intervalMs) * time.Millisecond
+	progress := os.Stdout
+	if rt.JSON {
+		progress = os.Stderr
+	}
 
-	fmt.Printf("auth: %s — %s\n", name, cfg.LoginURL)
+	fmt.Fprintf(progress, "auth: %s - %s\n", name, cfg.LoginURL)
 
 	// Step 1: open the login page and trigger auto-login (click buttons/SSO).
-	fmt.Print("  opening login page... ")
+	fmt.Fprint(progress, "  opening login page... ")
 	_, err := rt.Call("auth.open", map[string]any{
 		"loginUrl":     cfg.LoginURL,
 		"loginButton":  cfg.LoginButton,
@@ -166,10 +181,10 @@ func runLoginLoop(rt *Runtime, cfg AuthConfig, name string) error {
 		"ssoSteps":     cfg.SsoSteps,
 	})
 	if err != nil {
-		fmt.Println("failed")
-		return errExit(err)
+		fmt.Fprintln(progress, "failed")
+		return nil, errExit(err)
 	}
-	fmt.Println("ok")
+	fmt.Fprintln(progress, "ok")
 
 	// Step 2: first check — maybe auto-login already worked (SSO, cached session).
 	check := func() (map[string]any, error) {
@@ -181,30 +196,21 @@ func runLoginLoop(rt *Runtime, cfg AuthConfig, name string) error {
 
 	data, err := check()
 	if err != nil {
-		return errExit(err)
+		return nil, errExit(err)
 	}
 	if mapBool(data, "loggedIn") {
-		fmt.Println("\n✓ logged in")
-		if rt.JSON {
-			rt.PrintJSON(data)
-		}
-		return nil
+		fmt.Fprintln(progress, "\nlogged in")
+		return data, nil
 	}
 
 	// Step 3: need manual intervention — tell the user.
-	fmt.Println("  ⚠ not logged in — please complete login in Chrome")
-	fmt.Printf("  waiting (timeout %s, checking every %s)...\n",
+	fmt.Fprintln(progress, "  not logged in - please complete login in Chrome")
+	fmt.Fprintf(progress, "  waiting (timeout %s, checking every %s)...\n",
 		formatDuration(time.Duration(totalMs)*time.Millisecond),
 		formatDuration(interval))
 
-	spinners := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-	spinIdx := 0
-
 	for time.Now().Before(deadline) {
-		fmt.Printf("\r  %s waiting for login... (%s remaining) ",
-			spinners[spinIdx%len(spinners)],
-			formatDuration(time.Until(deadline)))
-		spinIdx++
+		fmt.Fprintf(progress, "\r  waiting for login... (%s remaining) ", formatDuration(time.Until(deadline)))
 
 		time.Sleep(interval)
 		data, err := check()
@@ -212,19 +218,13 @@ func runLoginLoop(rt *Runtime, cfg AuthConfig, name string) error {
 			continue // transient errors don't abort the loop
 		}
 		if mapBool(data, "loggedIn") {
-			fmt.Println("\r\033[K✓ logged in                                        ")
-			if rt.JSON {
-				rt.PrintJSON(data)
-			}
-			return nil
+			fmt.Fprintln(progress, "\r\033[Klogged in                                        ")
+			return data, nil
 		}
 	}
 
-	fmt.Println("\r\033[K✗ timed out                                        ")
-	if rt.JSON {
-		rt.PrintJSON(map[string]any{"loggedIn": false, "reason": "timeout"})
-	}
-	return nil
+	fmt.Fprintln(progress, "\r\033[Ktimed out                                        ")
+	return map[string]any{"loggedIn": false, "reason": "timeout"}, NewExitError(ExitLoginTimeout, fmt.Errorf("login timed out"))
 }
 
 func formatDuration(d time.Duration) string {
@@ -425,11 +425,19 @@ func runAuthConfig(rt *Runtime, name, loginURL string) error {
 			},
 		},
 	}
-	if err := os.MkdirAll(authConfigDir(), 0o755); err != nil {
+	if err := os.MkdirAll(authConfigDir(), 0o700); err != nil {
+		return errExit(err)
+	}
+	if err := os.Chmod(authConfigDir(), 0o700); err != nil {
 		return errExit(err)
 	}
 	b, _ := json.MarshalIndent(cfg, "", "  ")
-	os.WriteFile(cfgPath, append(b, '\n'), 0o644)
+	if err := os.WriteFile(cfgPath, append(b, '\n'), 0o600); err != nil {
+		return errExit(err)
+	}
+	if err := os.Chmod(cfgPath, 0o600); err != nil {
+		return errExit(err)
+	}
 	fmt.Printf("  ✓ wrote %s\n\n", cfgPath)
 
 	// Validate.

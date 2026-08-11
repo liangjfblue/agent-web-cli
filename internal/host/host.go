@@ -30,13 +30,19 @@ import (
 
 // Version is reported in status.get replies. It is overridden at link time
 // via -ldflags "-X host.Version=..." in release builds.
-var Version = "0.1.0-dev"
+var Version = "0.1.1-dev"
 
 // Host owns the socket listener and the extension channel.
 type Host struct {
-	socketPath string
-	listener   net.Listener
-	logf       func(format string, args ...any)
+	socketPath    string
+	listener      net.Listener
+	logf          func(format string, args ...any)
+	profileID     string
+	helloCh       chan ChromeReply
+	extensionDone chan struct{}
+	extensionOut  io.Writer
+	statusMu      sync.RWMutex
+	statusData    map[string]any
 
 	mu      sync.Mutex
 	pending map[string]chan proto.Response // tid -> waiter
@@ -45,10 +51,17 @@ type Host struct {
 // Run starts the host. It blocks until ctx is cancelled or a fatal error
 // occurs. The stdio channel to Chrome is read on a goroutine.
 func Run(ctx context.Context) error {
+	return run(ctx, os.Stdin, os.Stdout)
+}
+
+func run(ctx context.Context, extensionIn io.Reader, extensionOut io.Writer) error {
 	h := &Host{
-		socketPath: ipc.Endpoint(),
-		pending:    make(map[string]chan proto.Response),
-		logf:       func(format string, args ...any) {}, // stderr by default
+		pending:       make(map[string]chan proto.Response),
+		helloCh:       make(chan ChromeReply, 1),
+		extensionDone: make(chan struct{}),
+		extensionOut:  extensionOut,
+		statusData:    map[string]any{},
+		logf:          func(format string, args ...any) {}, // stderr by default
 	}
 	// Only log to stderr: stdout is reserved for native-messaging frames.
 	if os.Getenv("AWC_HOST_DEBUG") != "" {
@@ -58,19 +71,40 @@ func Run(ctx context.Context) error {
 		log.SetOutput(os.Stderr)
 	}
 
+	// New extensions identify their Chrome profile immediately. Older
+	// extensions fall back to the legacy single-profile endpoint.
+	go h.readExtensionLoop(extensionIn)
+	select {
+	case hello := <-h.helloCh:
+		h.applyHello(hello)
+	case <-time.After(2 * time.Second):
+		h.logf("extension hello timed out; using legacy endpoint")
+	case <-h.extensionDone:
+		return nil
+	case <-ctx.Done():
+		return nil
+	}
+	h.socketPath = ipc.EndpointForProfile(h.profileID)
+
 	ln, err := listen(ctx, h.socketPath)
 	if err != nil {
 		return fmt.Errorf("listen %s: %w", h.socketPath, err)
 	}
 	h.listener = ln
 	h.logf("awc host listening on %s", h.socketPath)
-
-	// Reader goroutine: consume native messages from stdin (the extension).
-	go h.readExtensionLoop(os.Stdin)
+	if h.profileID != "" {
+		if err := h.publishProfile(); err != nil {
+			h.Close()
+			return fmt.Errorf("register profile: %w", err)
+		}
+	}
 
 	// Accept loop: handle CLI connections.
 	go func() {
-		<-ctx.Done()
+		select {
+		case <-ctx.Done():
+		case <-h.extensionDone:
+		}
 		h.Close()
 	}()
 
@@ -88,6 +122,9 @@ func Run(ctx context.Context) error {
 
 // Close shuts down the socket listener.
 func (h *Host) Close() error {
+	if h.profileID != "" {
+		_ = ipc.UnregisterProfile(h.profileID, h.socketPath)
+	}
 	if h.listener != nil {
 		return h.listener.Close()
 	}
@@ -125,7 +162,7 @@ func (h *Host) handleCLI(conn net.Conn) {
 	h.register(req.Tid, ch)
 	defer h.unregister(req.Tid)
 
-	if err := WriteChromeRequest(os.Stdout, ChromeRequest{
+	if err := WriteChromeRequest(h.extensionOut, ChromeRequest{
 		Tid:  req.Tid,
 		Op:   req.Op,
 		Args: req.Args,
@@ -153,6 +190,7 @@ func (h *Host) handleCLI(conn net.Conn) {
 // readExtensionLoop continuously reads native replies and routes them by tid
 // to the waiting CLI connection.
 func (h *Host) readExtensionLoop(r io.Reader) {
+	defer close(h.extensionDone)
 	for {
 		reply, err := ReadChromeReply(r)
 		if err != nil {
@@ -162,6 +200,14 @@ func (h *Host) readExtensionLoop(r io.Reader) {
 			}
 			h.logf("read native reply: %v", err)
 			return
+		}
+		if reply.Tid == "__awc_hello__" && reply.Ok {
+			h.applyHello(reply)
+			select {
+			case h.helloCh <- reply:
+			default:
+			}
+			continue
 		}
 		// Convert the extension's reply to our proto.Response and wake the waiter.
 		resp := proto.Response{
@@ -176,22 +222,87 @@ func (h *Host) readExtensionLoop(r io.Reader) {
 	}
 }
 
-// handleStatus answers status.get locally: it reports whether the extension
-// channel is alive. We detect liveness via a best-effort probe.
+// handleStatus answers status.get locally using metadata from the extension
+// hello, so it does not need a second extension round trip.
 func (h *Host) handleStatus(conn net.Conn, tid string) {
+	h.statusMu.RLock()
+	extension := cloneMap(mapValue(h.statusData, "extension"))
+	profile := cloneMap(mapValue(h.statusData, "profile"))
+	h.statusMu.RUnlock()
+	if extension == nil {
+		extension = map[string]any{"connected": true}
+	}
+	if profile == nil {
+		profile = map[string]any{"profileId": "", "profileName": ""}
+	}
 	resp := proto.Response{
 		Tid: tid,
 		Ok:  true,
 		Data: map[string]any{
 			"host": map[string]any{
-				"version":     Version,
-				"endpoint":    h.socketPath,
+				"version":      Version,
+				"endpoint":     h.socketPath,
 				"endpointType": endpointType(),
 			},
+			"extension": extension,
+			"profile":   profile,
 		},
 	}
 	out, _ := proto.EncodeResponse(resp)
 	proto.WriteFrame(conn, out)
+}
+
+func (h *Host) applyHello(reply ChromeReply) {
+	profile := cloneMap(mapValue(reply.Data, "profile"))
+	extension := cloneMap(mapValue(reply.Data, "extension"))
+	if profile == nil {
+		return
+	}
+	profileID, _ := profile["profileId"].(string)
+	if profileID == "" {
+		return
+	}
+	h.statusMu.Lock()
+	h.profileID = profileID
+	h.statusData = map[string]any{"profile": profile, "extension": extension}
+	h.statusMu.Unlock()
+	if h.listener != nil {
+		_ = h.publishProfile()
+	}
+}
+
+func (h *Host) publishProfile() error {
+	h.statusMu.RLock()
+	profile := mapValue(h.statusData, "profile")
+	name, _ := profile["profileName"].(string)
+	profileID := h.profileID
+	h.statusMu.RUnlock()
+	return ipc.RegisterProfile(ipc.ProfileRegistration{
+		ProfileID:   profileID,
+		ProfileName: name,
+		Endpoint:    h.socketPath,
+		PID:         os.Getpid(),
+		Version:     Version,
+	})
+}
+
+func mapValue(m map[string]any, key string) map[string]any {
+	if m == nil {
+		return nil
+	}
+	v, _ := m[key].(map[string]any)
+	return v
+}
+
+func cloneMap(m map[string]any) map[string]any {
+	if m == nil {
+		return nil
+	}
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
 }
 
 // writeError sends a structured error frame to a CLI connection.

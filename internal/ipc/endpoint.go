@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"os/user"
+	"path/filepath"
 	"regexp"
 	"runtime"
 )
@@ -25,18 +26,36 @@ const (
 
 // Endpoint returns the socket path the host listens on and the CLI dials.
 //
-// Unix:   $AWC_RUNTIME_DIR/awc-host-<uid>.sock  (default /tmp)
+// Unix:   $AWC_RUNTIME_DIR/awc-host-<uid>.sock  (default user cache directory)
 // Windows: \\.\pipe\awc-host-<uid>
 func Endpoint() string {
+	return EndpointForProfile("")
+}
+
+// EndpointForProfile returns the endpoint for one Chrome profile. An empty
+// profile id preserves the legacy endpoint for older extensions and hosts.
+func EndpointForProfile(profileID string) string {
 	seg := userSegment()
+	suffix := ""
+	if profileID != "" {
+		suffix = "-" + sanitize(profileID)
+	}
 	if runtime.GOOS == "windows" {
-		return fmt.Sprintf(`\\.\pipe\awc-%s`, seg)
+		return fmt.Sprintf(`\\.\pipe\awc-%s%s`, seg, suffix)
 	}
-	dir := os.Getenv("AWC_RUNTIME_DIR")
-	if dir == "" {
-		dir = "/tmp"
+	return filepath.Join(RuntimeDir(), fmt.Sprintf("%s-%s%s.sock", SockName, seg, suffix))
+}
+
+// RuntimeDir is private to the current user and contains sockets plus the
+// small profile registry. It can be overridden for tests and containers.
+func RuntimeDir() string {
+	if dir := os.Getenv("AWC_RUNTIME_DIR"); dir != "" {
+		return dir
 	}
-	return fmt.Sprintf("%s/%s-%s.sock", dir, SockName, seg)
+	if dir, err := os.UserCacheDir(); err == nil {
+		return filepath.Join(dir, "awc", "run")
+	}
+	return filepath.Join(os.TempDir(), "awc-"+userSegment())
 }
 
 // userSegment returns a filesystem-safe identifier for the current OS user.

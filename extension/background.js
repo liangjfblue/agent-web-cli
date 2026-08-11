@@ -15,6 +15,7 @@ const RECONNECT_ALARM = "awc.reconnect";
 const CAPABILITIES = [
   "status.get",
   "cookies.getAll",
+  "cookies.remove",
   "tabs.query",
   "tabs.create",
   "tabs.update",
@@ -62,9 +63,32 @@ function connect() {
       chrome.alarms.create(RECONNECT_ALARM, { delayInMinutes: 0.25 });
     });
     connectedAt = Date.now();
+    announceProfile();
   } catch {
     port = null;
     chrome.alarms.create(RECONNECT_ALARM, { delayInMinutes: 0.25 });
+  }
+}
+
+async function announceProfile() {
+  try {
+    const profile = await getProfileIdentity();
+    if (!port) return;
+    port.postMessage({
+      tid: "__awc_hello__",
+      ok: true,
+      data: {
+        profile,
+        extension: {
+          connected: true,
+          connectedAt,
+          capabilities: CAPABILITIES,
+          version: chrome.runtime.getManifest().version
+        }
+      }
+    });
+  } catch {
+    // A failed hello falls back to the legacy single-profile endpoint.
   }
 }
 
@@ -75,6 +99,7 @@ async function onHostMessage(msg) {
     if (!handler) throw opError("UNKNOWN_OP", "Unknown op: " + op);
     const data = await handler(args || {});
     port.postMessage({ tid, ok: true, data });
+    if (op === "profile.rename") announceProfile();
   } catch (err) {
     port.postMessage({
       tid,
@@ -119,6 +144,14 @@ const HANDLERS = {
     }
     const cookies = await chrome.cookies.getAll(details);
     return { cookies };
+  },
+
+  "cookies.remove": async (args) => {
+    if (!args.url || !args.name) {
+      throw opError("BAD_ARGS", "cookies.remove requires url and name");
+    }
+    const removed = await chrome.cookies.remove({ url: args.url, name: args.name });
+    return { removed: Boolean(removed) };
   },
 
   "tabs.query": async () => {

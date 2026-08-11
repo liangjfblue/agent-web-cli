@@ -1,0 +1,10 @@
+{
+  "loginUrl": "https://vue.ruoyi.vip/login",
+  "timeout": "300s",
+  "loggedInWhen": {
+    "cookie": {
+      "url": "https://vue.ruoyi.vip",
+      "name": "Admin-Token"
+    }
+  }
+}

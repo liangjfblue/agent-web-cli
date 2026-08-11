@@ -60,7 +60,7 @@ func Setup() (*SetupResult, error) {
 	res.Steps = append(res.Steps, ensurePATH(root))
 
 	// Step 5: install skills to ~/.agents/skills/ so any AI agent (ZCode,
-	// Claude Code, Cursor) can auto-configure login for sites.
+	// Claude Code, Cursor) can configure login and build business CLIs.
 	res.Steps = append(res.Steps, installSkills(root))
 
 	// Step 6: extension load detection.

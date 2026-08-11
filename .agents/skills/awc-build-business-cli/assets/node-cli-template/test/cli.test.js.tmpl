@@ -1,0 +1,72 @@
+"use strict";
+
+const assert = require("node:assert/strict");
+const { spawnSync } = require("node:child_process");
+const fs = require("node:fs");
+const path = require("node:path");
+const test = require("node:test");
+
+const cli = path.join(__dirname, "..", "cli.js");
+const auth = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "auth", "__AUTH_NAME__.json"), "utf8"));
+const { buildLoginArgs, LOGIN_TIMEOUT_MS, parseArgs, prepareRequest } = require(cli);
+
+function run(...args) {
+  return spawnSync(process.execPath, [cli, ...args], { encoding: "utf8" });
+}
+
+test("prints help without acquiring credentials", () => {
+  const result = run("help");
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /Usage: __COMMAND_NAME__/);
+});
+
+test("rejects unsupported HTTP methods before acquiring credentials", async () => {
+  assert.throws(() => prepareRequest("TRACE"), (error) => {
+    assert.equal(error.exitCode, 2);
+    assert.match(error.message, /unsupported HTTP method/);
+    return true;
+  });
+});
+
+test("rejects a GET body before acquiring credentials", async () => {
+  assert.throws(() => prepareRequest("GET", { value: 1 }), (error) => {
+    assert.equal(error.exitCode, 2);
+    assert.match(error.message, /cannot include a body/);
+    return true;
+  });
+});
+
+test("supports JSON mutation requests", () => {
+  assert.deepEqual(prepareRequest("POST", { name: "example" }), {
+    method: "POST",
+    body: '{"name":"example"}',
+    bodyHeaders: { "Content-Type": "application/json" },
+  });
+  assert.deepEqual(prepareRequest("DELETE"), {
+    method: "DELETE",
+    body: undefined,
+    bodyHeaders: {},
+  });
+});
+
+test("builds login arguments without credentials", () => {
+  assert.deepEqual(buildLoginArgs(false), [
+    "session:acquire", "__AUTH_NAME__", "--url", "__BASE_URL__", "--interactive", "--json",
+  ]);
+  assert.deepEqual(buildLoginArgs(true), [
+    "session:acquire", "__AUTH_NAME__", "--url", "__BASE_URL__", "--interactive", "--refresh", "--json",
+  ]);
+});
+
+test("allows five minutes for interactive login", () => {
+  assert.equal(auth.timeout, "300s");
+  assert.equal(LOGIN_TIMEOUT_MS, 315_000);
+});
+
+test("parses json as a boolean option", () => {
+  assert.deepEqual(parseArgs(["sample:list", "--json"]), {
+    command: "sample:list",
+    positionals: [],
+    options: { json: true },
+  });
+});
