@@ -62,8 +62,7 @@ Windows：从 [Releases](https://github.com/liangjfblue/agent-web-cli/releases) 
 需要支持：订单列表、订单详情、创建订单和取消订单。
 ```
 
-把最后一行换成你的真实需求即可。查询、新增、更新、删除都可以支持，不预置 `user`、
-`role` 等固定业务资源。
+把最后一行换成你的真实需求即可。查询、新增、更新、删除都可以支持。
 
 Agent 会完成：
 
