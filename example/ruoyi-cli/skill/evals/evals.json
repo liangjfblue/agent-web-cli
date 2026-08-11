@@ -1,0 +1,20 @@
+{
+  "skill_name": "ruoyi-admin",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Check the status and department of the RuoYi user named admin.",
+      "expected_output": "Run ruoyi user:list --name admin, then summarize the read-only result."
+    },
+    {
+      "id": 2,
+      "prompt": "List the roles in RuoYi and check whether an admin role exists.",
+      "expected_output": "Run ruoyi role:list with a suitable filter and summarize matching roles."
+    },
+    {
+      "id": 3,
+      "prompt": "RuoYi says browser credentials were rejected. Recover the login and continue the user query.",
+      "expected_output": "Run ruoyi login --refresh with a command timeout of at least 330 seconds, tell the user to complete the browser CAPTCHA if needed, then rerun the original user query once; never expose a token."
+    }
+  ]
+}

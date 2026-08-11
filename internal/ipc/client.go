@@ -7,8 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
-	"runtime"
 	"time"
 
 	"github.com/agent/web-cli/internal/proto"
@@ -101,18 +99,6 @@ func (e *ErrSetup) Error() string {
 
 func setupError(err error) *ErrSetup {
 	return &ErrSetup{Detail: err.Error()}
-}
-
-func dial(ctx context.Context, endpoint string) (net.Conn, error) {
-	// Windows named pipes are addressed as \\.\pipe\... and dialed via net.Dial
-	// with the "pipe" network on Go (Microsoft/go-winio). To avoid a Windows
-	// build dependency in this MVP, we use the generic Dialer here; the
-	// Windows transport is wired up in ipc_windows.go when needed.
-	d := net.Dialer{}
-	if runtime.GOOS == "windows" {
-		return d.DialContext(ctx, "npipe", endpoint)
-	}
-	return d.DialContext(ctx, "unix", endpoint)
 }
 
 // newTid returns a 16-byte hex transaction id.

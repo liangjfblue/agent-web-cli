@@ -6,197 +6,174 @@
 
 </div>
 
-`awc` lets your **command-line tools and AI agents reuse your Chrome login
-sessions** — no headless browser, no separate browser instance, no stored
-passwords. It reads cookies live from your already-logged-in Chrome via a
-small extension, and can also drive Chrome (tabs, DOM, network, screenshots).
+`awc` lets AI agents and business CLIs reuse the Chrome session you are
+**already signed in with**. It turns authenticated business sites into reusable
+CLIs plus skills, without storing passwords or launching another headless browser.
 
+## 1. Quick installation
+
+Send this prompt to Codex, Claude Code, Cursor, or another coding agent:
+
+```text
+Install https://github.com/liangjfblue/agent-web-cli .
+Read AGENTS.md first, install it for the current operating system, and run awc sys:setup.
+Never print Cookie, Token, or session JSON values.
+When done, tell me the Chrome extension directory and the one manual step I must complete, then verify with awc sys:status.
 ```
-your CLI / AI agent ──► awc ──► Chrome (the one you're already logged into)
-                            reads HttpOnly cookies via chrome.cookies API
-```
 
-Typical use: you're logged into some internal site in Chrome; `awc` reads
-that session cookie so a script or agent can call the site's authenticated
-APIs — without you re-entering credentials anywhere.
+The agent downloads or builds `awc`, registers the Native Messaging Host, and
+installs two companion skills:
 
-## Install
+- `awc-auth-config` identifies the site's login signal and generates an auth profile.
+- `awc-build-business-cli` generates a CLI and business skill for requested operations.
 
-**macOS / Linux** (one line, no Node required):
+Chrome does not allow silent installation of unpacked extensions, so you
+perform one manual action:
+
+1. Open `chrome://extensions` in the address bar.
+2. Enable **Developer mode** and click **Load unpacked**.
+3. Select the `extension` directory reported by the agent.
+
+Installation is complete when `awc sys:status` shows both host and extension connected.
+
+<details>
+<summary>Manual installation without an agent</summary>
+
+macOS / Linux:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/liangjfblue/agent-web-cli/main/install.sh | bash
 ```
 
-The installer detects your platform, downloads the binary from the
-[latest release](https://github.com/liangjfblue/agent-web-cli/releases), installs
-to `~/.awc/bin`, adds it to PATH, and runs `awc sys:setup` (registers the
-native host + installs the `awc-auth-config` skill for your AI agents).
+Windows: download `awc-windows-amd64-<ver>.zip` from
+[Releases](https://github.com/liangjfblue/agent-web-cli/releases), extract it,
+and run:
 
-> **Windows**: download `awc-windows-amd64-<ver>.zip` from
-> [Releases](https://github.com/liangjfblue/agent-web-cli/releases), extract,
-> and run `awc sys:setup`. Or use WSL with the command above.
-
-**Then load the Chrome extension** (the only manual step — Chrome won't allow
-silent installs of unpacked extensions):
-
-1. `chrome://extensions` → enable **Developer mode**
-2. **Load unpacked** → select `~/.awc/extension`
-3. Verify: `awc sys:status` (should show the host connected)
-
-## Quick start: reuse a login session
-
-### Option A — let an AI agent configure it (recommended)
-
-`sys:setup` installs the `awc-auth-config` skill into your AI agent's skill
-directory (ZCode, Claude Code, Cursor, Codex). In your agent, just say:
-
-```
-帮我配一下 <name> 的登录，地址 <login URL>
+```powershell
+.\bin\awc.exe sys:setup
 ```
 
-e.g. `帮我配一下 sysop 的登录，地址 https://sysop.example.com/login`
+Then load the extension using the three steps above and run `awc sys:status`.
 
-The agent opens the site, reads the cookies, asks you to log in if needed,
-identifies which cookie signals "logged in", writes the config, and verifies
-it. **You never need to know cookie names.**
+</details>
 
-### Option B — read cookies directly
+## 2. Generate a business CLI + skill
 
-```sh
-# Read cookies as an HTTP Cookie header
-awc cookies:get --url "https://api.example.com" --header
-# → sessionid=abc123; token=xyz789; ...
+Sign in to the target business system in Chrome, open the page you want to
+wrap, and tell the agent:
 
-# Use it with curl / any HTTP client
-COOKIE=$(awc cookies:get --url "https://api.example.com" --header)
-curl -H "Cookie: $COOKIE" "https://api.example.com/api/data"
+```text
+Use awc-build-business-cli to turn the currently signed-in admin site into a CLI and skill.
+Support order listing, order details, order creation, and order cancellation.
 ```
 
-Cookies are read live from Chrome each time — never cached or stored.
+Replace the last line with the real operations you need. Query, create, update,
+and delete commands are all supported; the generic template does not preset
+resources such as `user` or `role`.
 
-### Check login state
+The agent will:
 
-```sh
-awc auth:login <name> --check    # instant: "logged in ✓" / "not logged in ✗"
+1. Check `awc`, the Chrome extension, and current login state.
+2. Use `awc-auth-config` to identify the auth cookie, storing only its name and login rules, never its value.
+3. Analyze HTTP APIs only within the requested scope.
+4. Generate the business CLI, auth config, tests, and companion business skill.
+5. Verify normal calls, expired login recovery, re-login, and one retry of the original command.
+
+After generation, keep using natural language instead of memorizing CLI flags:
+
+```text
+List orders created today
+Create a test order for product 1001 with quantity 2
+Cancel order 20260811001
 ```
 
-> `auth:login` (without `--check`) may block up to 120s waiting for a manual
-> login — only use it interactively, never in cron/CI/daemons.
+The business skill translates these requests into deterministic CLI commands.
+When login expires, it opens the login page, waits for you to complete a
+password, SSO, or CAPTCHA flow, and retries the original command once.
 
-## Commands
+For create, update, and delete operations, the agent must first resolve the
+exact target and effect. It must not mutate live data merely to discover an API
+or smoke-test a CLI. Cookie, Token, JWT, and `cookieHeader` values must never
+appear in terminal output, logs, source code, or skill content.
 
+Examples:
+
+- [`demo-admin`](example/demo-admin/): simulated order administration.
+- [`demo-svcgov`](example/demo-svcgov/): simulated service governance.
+- [`ruoyi-cli`](example/ruoyi-cli/): real user/role queries and login recovery
+  against the [RuoYi online demo](https://vue.ruoyi.vip/index).
+
+## 3. How it works
+
+The flow has two phases: generating an integration and using it day to day.
+The auth profile stores only Cookie names, URLs, and login rules. Cookie and
+Token values remain in Chrome and are used only briefly inside the business CLI process.
+
+```mermaid
+flowchart TB
+    subgraph BUILD["Generate the business integration"]
+        U["User describes the target page and operations"] --> BUILDER["awc-build-business-cli"]
+        BUILDER --> READY["Check awc, the extension, and requested scope"]
+        READY --> PROFILE{"Matching auth profile exists?"}
+        PROFILE -- "No" --> AUTH["awc-auth-config"]
+        AUTH --> DIFF["Compare Cookies before and after login<br/>generate auth.json"]
+        PROFILE -- "Yes" --> DISCOVER["Analyze only the requested HTTP APIs"]
+        DIFF --> DISCOVER
+        DISCOVER --> GENERATE["Generate the business CLI, skill, and tests"]
+        GENERATE --> VERIFY["Verify normal calls, login recovery, and one retry"]
+    end
+
+    subgraph RUN["Use the business integration"]
+        REQUEST["Natural-language business request"] --> BSKILL["Business skill<br/>select command and translate arguments"]
+        BSKILL --> BCLI["Business CLI"]
+        BCLI --> SESSION["awc session:acquire"]
+        SESSION --> CONFIG["Read auth.json"]
+        CONFIG --> BRIDGE["awc-host + Chrome extension<br/>Native Messaging"]
+        BRIDGE --> LOGIN{"loggedInWhen login signal exists?"}
+        LOGIN -- "No" --> INTERACTIVE["Business CLI login<br/>open Chrome and wait for the user"]
+        LOGIN -- "Yes" --> CREDENTIALS["Acquire Cookies for the API origin"]
+        INTERACTIVE --> CREDENTIALS
+        CREDENTIALS --> API["Business CLI calls the business HTTP API"]
+        API --> ACCEPTED{"API accepts the credentials?"}
+        ACCEPTED -- "Yes" --> RESULT["Return the business result"]
+        ACCEPTED -- "No: 401/403" --> REFRESH["Business CLI login --refresh<br/>clear rejected Cookie and sign in again"]
+        REFRESH --> RETRY["Retry the original command once"]
+        RETRY --> SESSION
+    end
+
+    GENERATE -. "generated artifact" .-> BSKILL
+    GENERATE -. "generated artifact" .-> BCLI
+    DIFF -. "auth rules" .-> CONFIG
 ```
-System     sys:status | sys:doctor | sys:install | sys:uninstall
-Cookies    cookies:get [--url --name --header --json]
-Auth       auth:login <name> [--check] | auth:config <name> --url <u> | auth:list
-Tabs       tabs:list | tabs:open <url> [--foreground] | tabs:focus <id>
-DOM        dom:snapshot | dom:click | dom:type | dom:query | dom:text
-           locators: --anchor | --selector | --text | --role | --name | --label | --testid
-Screenshot shot:page [-o file] [--tab-id]
-Network    net:watch | net:debug | net:stop | net:body
-Console    console:watch [--level] | console:clear
-CDP        cdp:send <method> [--params] | cdp:listen [--event]
-Wait       wait:for [--selector | --text | --url-pattern | --status]
-```
-
-Global flags: `--json` (raw JSON output), `--timeout 10s` (per-call).
-
-Run `awc --help` for the full list, `awc <command> --help` for any command's flags.
-
-For the complete integration guide (cookie patterns, auth handling, every
-command), see **[AGENTS.md](AGENTS.md)** — it's written for AI agents but is
-the most thorough reference for programmatic use.
-
-## Handling expired cookies
-
-Cookies expire or get revoked. Each `awc` command stays single-purpose —
-`cookies:get` returns instantly (never auto-logs-in), so it's safe in scripts.
-Handle expiry explicitly:
-
-```sh
-COOKIE=$(awc cookies:get --url "https://api.example.com" --header)
-resp=$(curl -s -H "Cookie: $COOKIE" "https://api.example.com/api/data")
-# API rejected the cookie → tell the user to re-login
-echo "$resp" | grep -q '"code":401' && echo "re-login: awc auth:login <name>"
-```
-
-> **cookie existence ≠ validity.** `auth:login --check` only tests whether a
-> cookie exists in Chrome; the API response is the only authoritative test.
-
-## Demos
-
-Two complete demos (business CLI + skill) live in [`example/`](example/) —
-an admin panel and a service-governance platform. They show the full pattern:
-awc reads the cookie → a business CLI calls authenticated APIs → a skill lets
-agents query via natural language. See
-[`example/DEMO-WALKTHROUGH.md`](example/DEMO-WALKTHROUGH.md).
 
 ---
 
-# For developers / contributors
+**Complete contract for agents and CLI developers:** [AGENTS.md](AGENTS.md)
 
-## Build from source
+**Simulated backend walkthrough:** [example/DEMO-WALKTHROUGH.md](example/DEMO-WALKTHROUGH.md)
 
-```sh
-./scripts/build.sh                  # current platform → bin/awc + bin/awc-host
-./scripts/build.sh --pack           # + npm tarball
-./scripts/cross-build.sh --pack     # all platforms → dist/awc-<os>-<arch>-<ver>.tar.gz
-VERSION=v0.2.0 ./scripts/build.sh   # override version
-```
+**CLI commands:** `awc --help` / `awc <command> --help`
 
-Version source: `$VERSION` env > git tag > `package.json`. Injected via
-`-ldflags` into `awc --version`.
+<details>
+<summary>Why does the release contain both awc and awc-host?</summary>
 
-## How it works (architecture)
+`awc` is the command invoked by people and business CLIs. `awc-host` is the
+Native Messaging bridge started automatically by Chrome; do not run it
+manually. They communicate through a user-scoped Named Pipe or private Unix
+socket, with no local HTTP/WebSocket port. `awc-host` exits when the extension disconnects.
 
-```
-awc CLI ──AW frame (msgpack+CRC16)──► Go host ──native messaging──► Chrome extension ──chrome.*──► page
-```
+</details>
 
-No HTTP/WebSocket server, no local port opened.
-
-**CLI ↔ host** (Unix socket / named pipe) — each frame:
-```
-| magic "AW" | ver u16=1 | payload len uint32 BE | msgpack payload | crc16 |
-```
-`crc16` = CRC-16/CCITT-FALSE over the payload, big-endian.
-
-**host ↔ extension** (native messaging) — 4-byte LE length prefix + UTF-8 JSON:
-```
-→ { tid, op, args? }    ← { tid, ok, data?, code?, msg? }
-```
-
-## Project layout
-
-```
-agent-web-cli/
-├── cmd/awc/        # CLI entry (cobra)
-├── cmd/host/       # native-messaging host entry
-├── internal/
-│   ├── proto/      # AW frame codec + msgpack + CRC16
-│   ├── ipc/        # Unix socket / named pipe client
-│   ├── host/       # bridges CLI socket ↔ native messaging
-│   ├── cmd/        # cobra command tree
-│   └── install/    # native-messaging manifest + registration
-├── extension/      # Chrome extension (MV3)
-└── go.mod
-```
-
-## Test
+<details>
+<summary>Development and tests</summary>
 
 ```sh
+./scripts/build.sh
+./scripts/cross-build.sh --pack
+
 go test ./...
+go vet ./...
+node --test example/ruoyi-cli/test/cli.test.js
 ```
 
-## Native-messaging host registration
-
-`awc sys:install` writes the Chrome native-messaging manifest:
-
-| OS | Location |
-|---|---|
-| macOS | `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.awc.host.json` |
-| Linux | `~/.config/google-chrome/NativeMessagingHosts/com.awc.host.json` |
-| Windows | registry `HKCU\Software\Google\Chrome\NativeMessagingHosts\com.awc.host` |
-
-Uninstall with `awc sys:uninstall`.
+</details>

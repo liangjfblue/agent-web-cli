@@ -60,9 +60,11 @@ for entry in "${TARGETS[@]}"; do
     # 复制 bundled skills（只随 awc 分发的核心配套 skill；demo skill 不打包）
     # sys:setup 会把这些复制到各 AI agent 的用户级 skills 目录
     mkdir -p "$out_dir/.agents/skills"
-    if [ -d "$ROOT/.agents/skills/awc-auth-config" ]; then
-        cp -r "$ROOT/.agents/skills/awc-auth-config" "$out_dir/.agents/skills/"
-    fi
+    for skill in awc-auth-config awc-build-business-cli; do
+        if [ -d "$ROOT/.agents/skills/$skill" ]; then
+            cp -r "$ROOT/.agents/skills/$skill" "$out_dir/.agents/skills/"
+        fi
+    done
 
     # 生成 package.json（bin 路径适配）
     bin_field='./bin/awc'
@@ -74,7 +76,7 @@ for entry in "${TARGETS[@]}"; do
   "description": "Agent Web CLI — drive Chrome from the command line",
   "license": "MIT",
   "bin": { "awc": "$bin_field" },
-  "files": ["bin/", "extension/", "install-native-host.js", "README.md"],
+  "files": ["bin/", "extension/", ".agents/", "install-native-host.js", "README.md"],
   "scripts": { "postinstall": "node install-native-host.js" },
   "os": ["$goos"],
   "cpu": ["$goarch"],

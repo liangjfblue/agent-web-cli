@@ -1,0 +1,44 @@
+---
+name: __SKILL_NAME__
+description: Operate the __DISPLAY_NAME__ business system through the __COMMAND_NAME__ CLI. Use for its supported business queries or mutations and for browser-login recovery when the CLI reports missing or rejected credentials.
+---
+
+# __DISPLAY_NAME__ business skill
+
+Use the `__COMMAND_NAME__` CLI for all __DISPLAY_NAME__ operations. Follow the
+documented command scope and do not invent commands that are absent from CLI
+help.
+
+## Command map
+
+TODO: Replace this section with the exact supported natural-language-to-command
+Identify mutation commands explicitly. Before running one, resolve its exact
+target and expected effect from the user's request; do not reuse an ambiguous
+target from earlier context.
+
+## Login recovery
+
+Run the requested command first. Do not preflight by checking cookie existence.
+
+- Exit `0`: answer from command output.
+- Exit `2`: correct the command arguments; do not change login state.
+- Exit `10` with `login required`: run `__COMMAND_NAME__ login`.
+- Exit `10` with `browser credentials were rejected`: run
+  `__COMMAND_NAME__ login --refresh`.
+- Exit `11`: report that browser login timed out.
+- Exit `20`, `21`, `22`, or `30`: diagnose awc/profile/extension state with
+  `awc sys:status`; do not treat it as an expired business login.
+
+Before interactive login, tell the user that a browser page will open and that
+they must complete any password, SSO approval, or CAPTCHA. Set the command tool
+timeout to at least 330 seconds. After login succeeds, retry the original query
+once.
+
+Never display passwords, CAPTCHA values, cookies, JWTs, tokens, awc session
+JSON, or `cookieHeader`.
+
+## Response rules
+
+TODO: Describe totals, empty results, stable identifiers, and business fields
+that should be summarized for each supported command. Add `--json` when
+structured output is useful.

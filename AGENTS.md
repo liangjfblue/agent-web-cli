@@ -174,63 +174,66 @@ awc wait:for --url-pattern "/dashboard" --timeout 30s  # wait for URL
 awc wait:for --url-pattern "/api/login" --status 200   # wait for XHR
 ```
 
-## Cookie handling patterns for code you write
+## Session handling pattern for business CLIs
 
-### Pattern 1: read cookie → call API (simplest)
-
-```python
-import subprocess, requests
-
-cookie = subprocess.check_output(
-    ["awc", "cookies:get", "--url", "https://api.example.com", "--header"]
-).decode().strip()
-
-resp = requests.get("https://api.example.com/api/data", headers={"Cookie": cookie})
-```
-
-### Pattern 2: check login state first
+Use `session:acquire` as the integration boundary. It is non-interactive by
+default, emits one versioned JSON document, and does not require callers to
+understand auth checks or cookie formatting.
 
 ```python
-import subprocess
+import json, subprocess, requests
 
-result = subprocess.run(["awc", "auth:login", "mysite", "--check"], capture_output=True, text=True)
-if "not logged in" in result.stdout:
-    # cookie might be expired — tell the user to run awc auth:login mysite
-    raise RuntimeError("not logged in — run: awc auth:login mysite")
+result = subprocess.run([
+    "awc", "session:acquire", "mysite",
+    "--url", "https://api.example.com", "--json",
+], capture_output=True, text=True)
 
-cookie = subprocess.check_output(
-    ["awc", "cookies:get", "--url", "https://api.example.com", "--header"]
-).decode().strip()
+if result.returncode == 10:
+    raise RuntimeError(
+        "login required; run: awc session:acquire mysite "
+        "--url https://api.example.com --interactive --json"
+    )
+result.check_returncode()
+session = json.loads(result.stdout)
+
+resp = requests.get(
+    "https://api.example.com/api/data",
+    headers={"Cookie": session["data"]["cookieHeader"]},
+)
+if resp.status_code in (401, 403):
+    raise RuntimeError(
+        "the API rejected the browser credentials; run: "
+        "awc session:acquire mysite --url https://api.example.com "
+        "--interactive --refresh --json"
+    )
 ```
 
-### Pattern 3: call API, handle rejection, advise re-login
+Never log, cache, or include `cookieHeader` in diagnostics. Invoke `awc` with an
+argument array (`subprocess.run`, `execFile`, etc.), not a shell command string.
 
-```sh
-#!/bin/sh
-set -e
-COOKIE=$(awc cookies:get --url "https://api.example.com" --header)
-resp=$(curl -s -H "Cookie: $COOKIE" "https://api.example.com/api/data")
+### Exit codes
 
-# API rejected the cookie — it's expired or invalid
-if echo "$resp" | grep -q '"code":-101\|"code":401\|unauthorized'; then
-    echo "cookie rejected by API" >&2
-    echo "re-login: awc auth:login mysite" >&2
-    exit 1
-fi
-echo "$resp"
-```
+- `0`: success
+- `2`: invalid arguments or auth configuration
+- `10`: login required
+- `11`: interactive login timed out
+- `20`: native host unavailable
+- `21`: multiple profiles connected; select one
+- `22`: selected profile not found
+- `30`: extension operation failed
 
-### Critical: do NOT call `auth:login` (without --check) in non-interactive code
+### Critical: interactive login is opt-in
 
-`auth:login` may block for 120s waiting for manual login. It is safe to call
-in scripts the user is watching, but **never** in:
+`session:acquire` never triggers login unless `--interactive` is present. Never
+pass `--interactive` in:
 - cron jobs
 - CI/CD pipelines
 - background services / daemons
 - any context where nobody is watching the terminal
 
-Use `auth:login --check` (instant, non-blocking) for automated checks, and
-instruct the user to run `auth:login` interactively when re-login is needed.
+On exit code `10`, instruct the user to run the interactive command themselves.
+Use `--refresh` only after the business API rejects credentials that are still
+present; it removes only the cookie named by the auth config before login.
 
 ## Auth config file format
 

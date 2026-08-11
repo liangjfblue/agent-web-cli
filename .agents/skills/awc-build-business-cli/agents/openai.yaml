@@ -1,0 +1,4 @@
+interface:
+  display_name: "AWC Business CLI Builder"
+  short_description: "Generate business CLIs and skills with awc"
+  default_prompt: "Use $awc-build-business-cli to generate a CLI and skill for the operations I request on the current business website."

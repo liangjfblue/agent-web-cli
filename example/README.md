@@ -1,6 +1,6 @@
 # awc 集成演示
 
-两个完整的 demo，展示如何用 **awc** 把浏览器的登录态接到命令行工具——让 CLI 和
+三个 demo，展示如何用 **awc** 把浏览器的登录态接到命令行工具——让 CLI 和
 AI agent 复用你**已经登录的 Chrome**，无需 headless 浏览器，无需存储密码。
 
 ```
@@ -36,15 +36,16 @@ AI agent 复用你**已经登录的 Chrome**，无需 headless 浏览器，无�
 
 > **关键洞察**：server 不是 awc 集成的重点——它只是"任意一个需要登录的已有后台"。
 > 真正展示"如何接入 awc"的是 **cli + skill**。注意 `cli/` 的 package.json 是
-> **零依赖**的（只用 Node 内置的 `child_process` + `fetch`）——接入 awc 的全部成本
-> 就是这么轻。
+> **零依赖**的（只用 Node 内置的 `child_process` + `fetch`）。业务 CLI 通过
+> `awc session:acquire ... --json` 获取稳定的会话契约，不解析面向人的输出。
 
-## 两个 demo
+## 三个 demo
 
 | demo | 模拟什么 | 端口 | 全局命令 | skill |
 |---|---|---|---|---|
 | **demo-admin** | 订单后台（dashboard / users） | 3000 | `demo-admin` | `/demo-admin` |
 | **demo-svcgov** | 服务治理平台（services / logs / database） | 3001 | `demo-svcgov` | `/demo-svcgov` |
+| **ruoyi-cli** | 真实 RuoYi 后台（用户 / 角色，只读） | HTTPS | `ruoyi` | `ruoyi-admin` |
 
 ---
 
@@ -155,9 +156,9 @@ demo-svcgov table users                           # users 表数据预览
    通过 `chrome.cookies` 扩展 API 能读——这是 awc 的核心价值：复用浏览器里那些对
    页面级工具不可见的登录态。
 
-2. **接入 awc 极轻量**。看 `cli/` 目录：零外部依赖，核心就是一行
-   `awc cookies:get --url ... --header` 读出 cookie，再当 `Cookie` 头传给 `fetch`。
-   你现有的任何需要登录态的脚本/CLI，都能这样接进来。
+2. **接入 awc 极轻量**。看 `cli/` 目录：零外部依赖，核心是调用
+   `awc session:acquire <name> --url ... --json`，把进程内的 `cookieHeader` 传给
+   `fetch`。CLI 同时获得稳定退出码、Profile 选择和显式登录恢复，不需要自己拼登录流程。
 
 3. **CLI + skill 是完整模式**。CLI 让人用，skill 让 AI 用。同一个后台，一套登录态，
    两种使用方式——你写了 cli，再写一份 skill，AI agent 就能用自然语言驱动它。
@@ -180,12 +181,20 @@ skill 通过**符号链接**让 `.agents/skills/` 发现 `example/*/skill/` 里�
 
 ## 登录态过期怎么办
 
-session cookie 24 小时过期。过期时 CLI 会输出 `cookie 失效或未登录`，重新登录即可：
+session cookie 会过期或被服务端吊销。Cookie 缺失时，显式打开 Chrome 等待登录：
 
 ```sh
-awc auth:login demo-admin      # 交互式重新登录（最多阻塞 120s）
-awc auth:login svcgov
+demo-admin login
+demo-svcgov login
 ```
 
-> 注意：`awc auth:login <name>`（不带 `--check`）会阻塞等待手动登录，只在你在终端
-> 前时运行；自动化脚本/CI 里只用 `auth:login <name> --check`（瞬时、非阻塞）。
+Cookie 仍存在但 API 已拒绝它时，使用 `--refresh` 清除配置指定的认证 Cookie 后重登：
+
+```sh
+demo-admin login --refresh
+demo-svcgov login --refresh
+```
+
+> 注意：`--interactive` 会阻塞等待用户完成登录，只在有人操作的终端使用；自动化脚本、
+> CI 和后台服务必须保持非交互，让退出码 `10` 交给上层处理。不要打印或保存成功 JSON
+> 中的 `cookieHeader`。

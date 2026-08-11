@@ -1,24 +1,26 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 
+	"github.com/agent/web-cli/internal/ipc"
 	"github.com/spf13/cobra"
 )
 
 // registerProfiles adds the flat profiles:* commands.
 //
 // Multi-profile support works in two layers:
-//   • profile.identity / profile.rename — the extension reports a stable id
+//   - profile.identity / profile.rename — the extension reports a stable id
 //     generated per Chrome user-profile (stored in chrome.storage.local).
-//   • profiles:default — the CLI persists the chosen profile selector in
+//   - profiles:default — the CLI persists the chosen profile selector in
 //     ~/.awc/config.json so subsequent commands target it automatically.
 //
-// Full per-profile host routing (one host instance per Chrome profile) is a
-// host-side concern; these commands handle the user-facing side.
+// The host publishes one private endpoint per connected Chrome profile; these
+// commands expose discovery, naming, and default selection to the user.
 func registerProfiles(root *cobra.Command, rt *Runtime) {
 	root.AddCommand(
 		profilesList(rt),
@@ -35,25 +37,24 @@ func profilesList(rt *Runtime) *cobra.Command {
 		Use:   "profiles:list",
 		Short: "List connected browser profiles",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			data, err := rt.Call("status.get", nil)
+			profiles, err := ipc.ActiveProfiles(context.Background())
 			if err != nil {
 				return errExit(err)
 			}
+			defaultProfile := ""
+			if cfg := readConfig(); cfg != nil {
+				defaultProfile = cfg.DefaultProfile
+			}
 			if rt.JSON {
-				rt.PrintJSON(data)
+				rt.PrintJSON(map[string]any{"profiles": profiles, "defaultProfile": defaultProfile})
 				return nil
 			}
-			prof := mapVal(data, "profile")
-			ext := mapVal(data, "extension")
-			fmt.Printf("%-16s %-20s %-12s %s\n", "PROFILE_ID", "NAME", "VERSION", "CONNECTED")
-			fmt.Printf("%-16s %-20s %-12s %v\n",
-				mapStr(prof, "profileId"),
-				mapStr(prof, "profileName"),
-				mapStr(ext, "version"),
-				mapBool(ext, "connected"))
-			// Show configured default if any.
-			if cfg := readConfig(); cfg != nil && cfg.DefaultProfile != "" {
-				fmt.Printf("\ndefault: %s\n", cfg.DefaultProfile)
+			fmt.Printf("%-16s %-20s %-12s %s\n", "PROFILE_ID", "NAME", "VERSION", "PID")
+			for _, prof := range profiles {
+				fmt.Printf("%-16s %-20s %-12s %d\n", prof.ProfileID, prof.ProfileName, prof.Version, prof.PID)
+			}
+			if defaultProfile != "" {
+				fmt.Printf("\ndefault: %s\n", defaultProfile)
 			}
 			return nil
 		},
@@ -151,12 +152,18 @@ func readConfigOrCreate() *awcConfig {
 
 func writeConfig(cfg *awcConfig) error {
 	dir := filepath.Dir(configPath())
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
 		return err
 	}
 	b, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(configPath(), append(b, '\n'), 0o644)
+	if err := os.WriteFile(configPath(), append(b, '\n'), 0o600); err != nil {
+		return err
+	}
+	return os.Chmod(configPath(), 0o600)
 }

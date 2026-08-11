@@ -4,13 +4,27 @@ package host
 
 import (
 	"context"
+	"fmt"
 	"net"
+	"os/user"
+
+	"github.com/Microsoft/go-winio"
 )
 
 // listen opens the Windows named pipe used by CLI clients.
-// A full npipe implementation requires github.com/Microsoft/go-winio; this
-// stub keeps the windows build green and is completed when the windows
-// transport is wired up.
 func listen(ctx context.Context, path string) (net.Listener, error) {
-	return nil, net.ErrClosed
+	u, err := user.Current()
+	if err != nil {
+		return nil, fmt.Errorf("resolve current user SID: %w", err)
+	}
+	if u.Uid == "" {
+		return nil, fmt.Errorf("resolve current user SID: empty SID")
+	}
+	config := &winio.PipeConfig{
+		SecurityDescriptor: "D:P(A;;GA;;;" + u.Uid + ")",
+		MessageMode:        false,
+		InputBufferSize:    64 * 1024,
+		OutputBufferSize:   64 * 1024,
+	}
+	return winio.ListenPipe(path, config)
 }

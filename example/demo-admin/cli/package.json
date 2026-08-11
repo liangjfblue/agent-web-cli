@@ -1,12 +1,13 @@
 {
   "name": "awc-demo-admin",
   "version": "0.1.0",
-  "description": "Business CLI for the demo admin panel — reads cookies via awc",
+  "description": "Business CLI for the demo admin panel using awc session:acquire",
   "private": true,
   "bin": {
     "demo-admin": "./cli.js"
   },
   "scripts": {
-    "link": "npm link"
+    "link": "npm link",
+    "test": "node --test"
   }
 }

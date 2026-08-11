@@ -7,7 +7,7 @@ import (
 )
 
 // Version is overridden at link time via -ldflags in release builds.
-var Version = "0.1.0-dev"
+var Version = "0.1.1-dev"
 
 // NewRootCmd builds the full command tree.
 //
@@ -18,8 +18,8 @@ func NewRootCmd(rt *Runtime) *cobra.Command {
 		Use:           "awc",
 		Short:         "Agent Web CLI — drive Chrome from the command line",
 		Version:       Version,
-		SilenceUsage:  false,
-		SilenceErrors: false,
+		SilenceUsage:  true,
+		SilenceErrors: true,
 	}
 	rt.rootFlags(root)
 
@@ -51,6 +51,7 @@ func init() {
 		registerRec,
 		registerProfiles,
 		registerAuth,
+		registerSession,
 	)
 }
 

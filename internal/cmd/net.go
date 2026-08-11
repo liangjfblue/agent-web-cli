@@ -193,7 +193,8 @@ func netBody(rt *Runtime) *cobra.Command {
 func netBodyCacheDir() string {
 	home, _ := os.UserHomeDir()
 	dir := filepath.Join(home, ".awc", "net-bodies")
-	os.MkdirAll(dir, 0o755)
+	_ = os.MkdirAll(dir, 0o700)
+	_ = os.Chmod(dir, 0o700)
 	return dir
 }
 
@@ -225,7 +226,8 @@ func cacheBodies(data map[string]any) {
 			continue
 		}
 		path := filepath.Join(netBodyCacheDir(), bodyKey)
-		os.WriteFile(path, []byte(bodyData), 0o644)
+		_ = os.WriteFile(path, []byte(bodyData), 0o600)
+		_ = os.Chmod(path, 0o600)
 		// Remove bodyData from the response so it doesn't bloat JSON output.
 		delete(r, "bodyData")
 	}
