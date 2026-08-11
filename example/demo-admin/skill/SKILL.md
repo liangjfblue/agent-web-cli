@@ -1,87 +1,53 @@
 ---
 name: demo-admin
-description: "[demo] Query the demo admin panel (orders, revenue, users) via the business CLI. Use when the user asks about dashboard data, order counts, revenue, or user lists from the demo admin system (e.g. \"查一下后台数据\" or \"how many orders today\")."
+description: "[demo] Query the demo admin panel through the demo-admin business CLI. Use when the user asks about dashboard data, order counts, revenue, user lists, or browser-login recovery for the demo admin system."
 ---
 
 # demo-admin skill
 
-Query the demo admin panel's APIs through the business CLI (`demo-admin`),
-which reads cookies from Chrome via `awc` and calls the authenticated APIs.
+Use the `demo-admin` CLI for demo admin data. The CLI acquires a versioned
+browser session through `awc session:acquire`; do not call `cookies:get` or
+parse awc's human-facing output yourself.
 
 ## Prerequisites
 
-- The demo CLI must be installed globally: `cd example/demo-admin/cli && npm link`
-- The demo server must be running: `cd example/demo-admin/server && npm install && node server.js`
-- The user must be logged in (if not, run `awc auth:login demo-admin`)
+- Install the CLI: `cd example/demo-admin/cli && npm link`.
+- Run the server: `cd example/demo-admin/server && npm install && node server.js`.
+- Configure auth profile `demo-admin` for `http://localhost:3000/login`.
 
-## Commands
+## Command map
 
-Once linked, the `demo-admin` command is available from any directory:
-
-```sh
-# Dashboard: orders, revenue, pending count
-demo-admin dashboard
-
-# User list
-demo-admin users
-
-# Login status check
-demo-admin status
+```text
+dashboard totals and revenue -> demo-admin dashboard
+list users                   -> demo-admin users
+check browser credentials    -> demo-admin status
+interactive login            -> demo-admin login
+replace rejected credentials -> demo-admin login --refresh
 ```
 
-## How it works
+## Login recovery
 
-1. `demo-admin` calls `awc cookies:get --url http://localhost:3000 --header` to
-   read the session cookie from Chrome.
-2. The cookie is passed as a `Cookie` header to `fetch()`.
-3. If the API returns 401, the command prints `✗ cookie 失效或未登录` and exits.
+Run the requested business command first. Do not preflight with cookie
+existence: a stale cookie can exist while the API rejects it.
 
-The session cookie is HttpOnly — page JavaScript cannot read it. Only `awc`
-(via chrome.cookies API) can read it. This is the core value of awc: reusing
-login sessions that are invisible to page-level tools.
+- Exit `0`: answer from command output.
+- Exit `2`: correct the command arguments; do not change login state.
+- Exit `10` with `login required`: run `demo-admin login`.
+- Exit `10` with `browser credentials were rejected`: run
+  `demo-admin login --refresh`.
+- Exit `11`: report that interactive login timed out.
+- Exit `20`, `21`, `22`, or `30`: diagnose awc/profile/extension state with
+  `awc sys:status`; do not treat it as an expired business login.
 
-## Handling login failures — agent behavior guide
+Before interactive login, tell the user that Chrome will open. The user must
+complete any password, SSO, or CAPTCHA step. Set the command tool timeout to at
+least 330 seconds. After login succeeds, retry the original command once.
 
-**Default behavior: just call the command.** Do NOT pre-check login state or
-run `awc auth:login` proactively — `demo-admin` already detects a bad session
-and reports it. Pre-checking only adds latency; proactive login can block.
+Never display or persist passwords, cookies, tokens, awc session JSON, or
+`cookieHeader`.
 
-**When `demo-admin` outputs `✗ cookie 失效或未登录` (exit 1) — auto-poll mode:**
+## Response rules
 
-The goal is a hands-off recovery: tell the user to log in, then **poll the
-real command until it succeeds or times out** — the user does not need to
-come back and say "I'm logged in".
-
-1. **STOP.** Do not call `awc auth:login demo-admin` yourself — it (without
-   `--check`) opens a browser and **blocks up to 120 seconds**. That is the
-   user's job, not the agent's. Auto-polling the cli command replaces this.
-
-2. **Tell the user, in their language**, what happened and exactly what to do.
-   Say you will auto-detect success so they need not reply:
-
-   > 你的 demo-admin 登录已过期（cookie 失效）。
-   >
-   > 请在浏览器打开 http://localhost:3000/login，用 admin / admin123 登录。
-   > 我会在后台自动检测，登录成功后立即继续查询，你无需再回复我。
-
-3. **Poll the real command, not `auth:login --check`.** Re-run the original
-   command (e.g. `demo-admin dashboard`) every ~5s, up to ~90s:
-   - On success → return the result and note "已检测到登录成功".
-   - On repeated `cookie 失效` → keep polling until the deadline.
-
-   Why the real command and not `--check`? `--check` only tests whether a
-   cookie *exists* in Chrome. A cookie can linger after logout or a server
-   restart while the server rejects it → `--check` would falsely report
-   "logged in". The actual API response (401 → the cli's `cookie 失效`
-   message) is the source of truth.
-
-4. **If the ~90s deadline passes with no success**, stop polling and escalate
-   to manual troubleshooting. Tell the user:
-   > 90 秒内仍未检测到登录。可能原因：
-   > - 服务端重启过（内存 session 被清），请确认 demo server 在运行
-   > - auth 配置错误，请检查 ~/.awc/auth/demo-admin.json 的
-   >   loggedInWhen.cookie.url 是否为 http://localhost:3000
-   > 排查后请告诉我，我再重试。
-
-**Never let polling run unbounded.** The ~90s cap is mandatory — an agent
-that polls forever hangs the session. When in doubt, escalate to the user.
+Summarize dashboard order, revenue, pending, update-time, and current-user
+fields. For user lists, report the total and useful identity/role fields. State
+clearly when no records match.

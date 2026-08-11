@@ -21,7 +21,11 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
       - run: go test ./...
       - run: go vet ./...
       - run: go build ./cmd/awc
       - run: go build ./cmd/host
+      - run: node --test example/demo-admin/cli/test/cli.test.js example/demo-svcgov/cli/test/cli.test.js example/ruoyi-cli/test/cli.test.js

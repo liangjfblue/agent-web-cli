@@ -184,14 +184,15 @@ skill 通过**符号链接**让 `.agents/skills/` 发现 `example/*/skill/` 里�
 session cookie 会过期或被服务端吊销。Cookie 缺失时，显式打开 Chrome 等待登录：
 
 ```sh
-awc session:acquire demo-admin --url http://localhost:3000 --interactive --json
-awc session:acquire svcgov --url http://127.0.0.1:3001 --interactive --json
+demo-admin login
+demo-svcgov login
 ```
 
 Cookie 仍存在但 API 已拒绝它时，使用 `--refresh` 清除配置指定的认证 Cookie 后重登：
 
 ```sh
-awc session:acquire demo-admin --url http://localhost:3000 --interactive --refresh --json
+demo-admin login --refresh
+demo-svcgov login --refresh
 ```
 
 > 注意：`--interactive` 会阻塞等待用户完成登录，只在有人操作的终端使用；自动化脚本、

@@ -1,87 +1,111 @@
 #!/usr/bin/env node
-// svcgov-cli — business CLI for the service governance platform.
-//
-// Reads cookies from Chrome via awc, calls the platform's authenticated APIs.
-//
-// Usage:
-//   node cli.js services                  # list all services
-//   node cli.js logs --service gateway    # gateway logs
-//   node cli.js logs --level error        # only errors
-//   node cli.js logs --service gateway --level error  # both filters
-//   node cli.js tables                    # database tables
-//   node cli.js table users              # preview table data
-//   node cli.js status                    # check login state
+"use strict";
 
-const { execFileSync } = require("child_process");
+// Business CLI example: acquire a versioned awc session, then call the API.
+// Browser credentials stay in this process and are never printed or persisted.
+
+const { execFileSync } = require("node:child_process");
 
 const BASE_URL = "http://127.0.0.1:3001";
 const AUTH_NAME = "svcgov";
+const LOGIN_TIMEOUT_MS = 315_000;
+const INFRA_EXIT_CODES = new Set([20, 21, 22, 30]);
+
+class CliError extends Error {
+  constructor(message, exitCode = 1) {
+    super(message);
+    this.exitCode = exitCode;
+  }
+}
+
+function buildLoginArgs(refresh) {
+  const args = ["session:acquire", AUTH_NAME, "--url", BASE_URL, "--interactive"];
+  if (refresh) args.push("--refresh");
+  args.push("--json");
+  return args;
+}
+
+function runAwc(args, timeout) {
+  try {
+    return execFileSync("awc", args, {
+      encoding: "utf8",
+      timeout,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch (error) {
+    const code = Number(error.status) || (error.code === "ETIMEDOUT" ? 11 : 1);
+    if (code === 10) throw new CliError("login required; run: demo-svcgov login", 10);
+    if (code === 11) throw new CliError("browser login timed out", 11);
+    if (INFRA_EXIT_CODES.has(code)) {
+      throw new CliError("awc browser infrastructure is unavailable; run: awc sys:status", code);
+    }
+    throw new CliError("unable to acquire the Chrome session; run: awc sys:status", code);
+  }
+}
+
+function parseSession(output) {
+  let session;
+  try {
+    session = JSON.parse(output);
+  } catch {
+    throw new CliError("awc returned invalid JSON");
+  }
+  if (!session?.ok || !session?.data?.cookieHeader) {
+    throw new CliError("awc did not return usable browser credentials", 10);
+  }
+  return session.data;
+}
 
 function acquireSession() {
-  try {
-    const output = execFileSync("awc", [
-      "session:acquire", AUTH_NAME,
-      "--url", BASE_URL,
-      "--json",
-    ], {
-      encoding: "utf8", timeout: 10000, stdio: ["ignore", "pipe", "pipe"],
-    });
-    return JSON.parse(output).data;
-  } catch (err) {
-    if (err.status === 10) {
-      console.error("not logged in");
-      console.error(`  run: awc session:acquire ${AUTH_NAME} --url ${BASE_URL} --interactive --json`);
-    } else {
-      console.error("unable to acquire a browser session; run: awc sys:status");
-    }
-    process.exit(1);
-  }
+  return parseSession(runAwc([
+    "session:acquire", AUTH_NAME, "--url", BASE_URL, "--json",
+  ], 15_000));
+}
+
+function login(refresh) {
+  parseSession(runAwc(buildLoginArgs(refresh), LOGIN_TIMEOUT_MS));
+  console.log("Browser login is available.");
 }
 
 async function callAPI(path) {
   const session = acquireSession();
-  const resp = await fetch(`${BASE_URL}${path}`, { headers: { Cookie: session.cookieHeader } });
-  if (resp.status === 401 || resp.status === 403) {
-    console.error("browser credentials were rejected by the API");
-    console.error(`  run: awc session:acquire ${AUTH_NAME} --url ${BASE_URL} --interactive --refresh --json`);
-    process.exit(1);
+  const response = await fetch(`${BASE_URL}${path}`, {
+    headers: { Cookie: session.cookieHeader },
+  });
+  if (response.status === 401 || response.status === 403) {
+    throw new CliError("browser credentials were rejected; run: demo-svcgov login --refresh", 10);
   }
-  return resp.json();
+  if (!response.ok) throw new CliError(`demo API failed (HTTP ${response.status})`);
+  return response.json();
 }
-
-// ── Commands ──
 
 async function services() {
   const data = await callAPI("/api/services");
-  const svcs = data.services;
-  console.log(`🛡 Services (${svcs.length})`);
+  const serviceRows = data.services;
+  console.log(`🛡 Services (${serviceRows.length})`);
   console.log("─".repeat(70));
   console.log("  NAME               STATUS     INST  VERSION   CPU     MEMORY");
-  for (const s of svcs) {
-    const statusIcon = s.status === "healthy" ? "✓" : s.status === "degraded" ? "⚠" : "✗";
-    console.log(`  ${statusIcon} ${s.name.padEnd(18)} ${s.status.padEnd(10)} ${String(s.instances).padEnd(5)} ${s.version.padEnd(9)} ${String(s.cpu).padEnd(7)} ${s.memory}`);
+  for (const service of serviceRows) {
+    const statusIcon = service.status === "healthy" ? "✓" : service.status === "degraded" ? "⚠" : "✗";
+    console.log(`  ${statusIcon} ${service.name.padEnd(18)} ${service.status.padEnd(10)} ${String(service.instances).padEnd(5)} ${service.version.padEnd(9)} ${String(service.cpu).padEnd(7)} ${service.memory}`);
   }
-  // Highlight problems
-  const issues = svcs.filter(s => s.status !== "healthy");
+  const issues = serviceRows.filter((service) => service.status !== "healthy");
   if (issues.length) {
     console.log("");
-    for (const s of issues) {
-      console.log(`  ⚠ ${s.name}: ${s.status}`);
-    }
+    for (const service of issues) console.log(`  ⚠ ${service.name}: ${service.status}`);
   }
 }
 
-async function logs(args) {
-  let path = "/api/logs?";
-  if (args.service) path += `service=${args.service}&`;
-  if (args.level) path += `level=${args.level}&`;
-  const data = await callAPI(path);
-  const logs = data.logs;
-  console.log(`📋 Logs (${data.total} total, showing ${logs.length})${args.service ? " · " + args.service : ""}${args.level ? " · " + args.level : ""}`);
+async function logs(options) {
+  const url = new URL("/api/logs", BASE_URL);
+  if (options.service) url.searchParams.set("service", options.service);
+  if (options.level) url.searchParams.set("level", options.level);
+  const data = await callAPI(`${url.pathname}${url.search}`);
+  console.log(`📋 Logs (${data.total} total, showing ${data.logs.length})${options.service ? ` · ${options.service}` : ""}${options.level ? ` · ${options.level}` : ""}`);
   console.log("─".repeat(70));
-  for (const l of logs) {
-    const icon = l.level === "error" ? "✗" : l.level === "warn" ? "⚠" : "→";
-    console.log(`  ${icon} [${l.ts.slice(11, 19)}] ${l.service.padEnd(16)} ${l.level.toUpperCase().padEnd(6)} ${l.message}`);
+  for (const item of data.logs) {
+    const icon = item.level === "error" ? "✗" : item.level === "warn" ? "⚠" : "→";
+    console.log(`  ${icon} [${item.ts.slice(11, 19)}] ${item.service.padEnd(16)} ${item.level.toUpperCase().padEnd(6)} ${item.message}`);
   }
 }
 
@@ -90,65 +114,80 @@ async function tables() {
   console.log(`🗄 Database Tables (${data.tables.length})`);
   console.log("─".repeat(40));
   console.log("  NAME        ROWS  ENGINE");
-  for (const t of data.tables) {
-    console.log(`  ${t.name.padEnd(12)} ${String(t.rows).padEnd(6)} ${t.engine}`);
+  for (const table of data.tables) {
+    console.log(`  ${table.name.padEnd(12)} ${String(table.rows).padEnd(6)} ${table.engine}`);
   }
 }
 
 async function showTable(name) {
-  const data = await callAPI(`/api/database/${name}`);
+  if (!name || !/^[a-zA-Z0-9_-]+$/.test(name)) throw new CliError("table requires a valid table name", 2);
+  const data = await callAPI(`/api/database/${encodeURIComponent(name)}`);
   console.log(`🗄 ${data.table} (${data.rows.length} rows)`);
   console.log("─".repeat(60));
-  // Header
-  console.log("  " + data.columns.map(c => c.padEnd(14)).join(""));
-  console.log("  " + "─".repeat(56));
-  // Rows
+  console.log(`  ${data.columns.map((column) => column.padEnd(14)).join("")}`);
+  console.log(`  ${"─".repeat(56)}`);
   for (const row of data.rows) {
-    console.log("  " + row.map(c => String(c).padEnd(14)).join(""));
+    console.log(`  ${row.map((cell) => String(cell).padEnd(14)).join("")}`);
   }
 }
 
-async function status() {
+function status() {
   const session = acquireSession();
   console.log(`session available (${session.profileId || "legacy profile"})`);
 }
 
-// ── Parse args ──
+function parseOptions(args) {
+  const options = {};
+  for (let index = 0; index < args.length; index += 2) {
+    const flag = args[index];
+    const value = args[index + 1];
+    if (!flag?.startsWith("--") || !value || value.startsWith("--")) {
+      throw new CliError(`invalid option: ${flag || ""}`, 2);
+    }
+    const key = flag.slice(2);
+    if (!new Set(["service", "level"]).has(key)) throw new CliError(`unknown option: ${flag}`, 2);
+    options[key] = value;
+  }
+  return options;
+}
 
-const cmd = process.argv[2];
-
-if (!cmd) {
+function printHelp() {
   console.log(`Usage: demo-svcgov <command>
 
 Commands:
-  services                         List all services and their status
-  logs [--service <name>] [--level <level>]   Query logs (level: info|warn|error)
-  tables                           List database tables
-  table <name>                     Preview table data
-  status                           Check login state
-
-Examples:
-  demo-svcgov services
-  demo-svcgov logs --service gateway --level error
-  demo-svcgov table users
-`);
-  process.exit(0);
+  login [--refresh]                         Open Chrome and wait for login
+  services                                  List services
+  logs [--service <name>] [--level <level>] Query logs
+  tables                                    List database tables
+  table <name>                              Preview table data
+  status                                    Check browser credentials`);
 }
 
-const cmdArgs = {};
-for (let i = 3; i < process.argv.length; i += 2) {
-  const key = process.argv[i]?.replace("--", "");
-  const val = process.argv[i + 1];
-  if (key) cmdArgs[key] = val;
+async function main(argv = process.argv.slice(2)) {
+  const [command, ...args] = argv;
+  if (!command || command === "help" || command === "--help" || command === "-h") {
+    printHelp();
+    return;
+  }
+  if (command === "login") {
+    if (args.some((arg) => arg !== "--refresh") || args.filter((arg) => arg === "--refresh").length > 1) {
+      throw new CliError("usage: demo-svcgov login [--refresh]", 2);
+    }
+    return login(args.includes("--refresh"));
+  }
+  if (command === "services" && !args.length) return services();
+  if (command === "logs") return logs(parseOptions(args));
+  if (command === "tables" && !args.length) return tables();
+  if (command === "table" && args.length === 1) return showTable(args[0]);
+  if (command === "status" && !args.length) return status();
+  throw new CliError(`invalid command or arguments: ${command}`, 2);
 }
 
-switch (cmd) {
-  case "services": services(); break;
-  case "logs":     logs(cmdArgs); break;
-  case "tables":   tables(); break;
-  case "table":    showTable(process.argv[3]); break;
-  case "status":   status(); break;
-  default:
-    console.error(`Unknown command: ${cmd}`);
-    process.exit(1);
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error.message || String(error));
+    process.exit(error.exitCode || 1);
+  });
 }
+
+module.exports = { buildLoginArgs, LOGIN_TIMEOUT_MS, main };
