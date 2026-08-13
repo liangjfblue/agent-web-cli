@@ -6,8 +6,13 @@
 
 </div>
 
-`awc` 让 AI agent 和业务 CLI 复用你**已经登录的 Chrome**，从而把需要登录的业务后台
-封装成可重复使用的 CLI + skill。不需要保存密码，也不需要再启动 headless 浏览器。
+**没有 Agent API 的内部后台，现在直接变成 agent 能稳定调用的 CLI。**
+
+那些"只有 Web UI、要登录、又没开放 agent 友好 API"的系统 —— OA、发布平台、服务治理、遗留 admin、第三方 SaaS 控制台 —— `awc` 把它们编译成**一次生成、反复确定性执行**的 CLI + skill。
+
+Chrome 登录态只是首次的**认证引导 + API 发现**手段，不是日常执行环境。生成一次之后，agent 直接调 HTTP API，日常执行不再看页面、不再点按钮；密码不落地，凭据始终留在 Chrome。
+
+> **适用范围：** `awc` 适合开发者笔记本和交互式运维控制台；不适合在无人值守的服务器 cron 里运行（每次调用都需要一个已登录的 Chrome 会话）。
 
 ## 1. 快速安装
 
@@ -94,7 +99,23 @@ CLI 而随意修改真实数据。Cookie、Token、JWT 和 `cookieHeader` 不能
 - [`ruoyi-cli`](example/ruoyi-cli/)：基于 [RuoYi 在线演示站](https://vue.ruoyi.vip/index)
   的真实用户/角色查询和登录恢复。
 
-## 3. 实现原理
+## 3. 它和浏览器 Agent 有什么不同
+
+像 Browser Use、Grok Bot 这类方案，是让 agent 去操作浏览器本身；`awc` 则把一个登录后的 Web 系统**编译**成 agent 可以确定性调用的 CLI。Chrome 只在首次封装时用到，日常执行直接走 HTTP API。
+
+|  | 浏览器 Agent（Browser Use / Grok Bot 类） | `awc` |
+|--|--|--|
+| 解决的系统 | 有没有 API 都行 | **没有 agent API、只有登录后 Web UI 的内部后台** |
+| 首次接入 | 浏览器操作 | 浏览器操作 + API 发现 |
+| 日常执行 | 每次看页面 / 点按钮 | **直接调 HTTP API** |
+| LLM 介入 | 每个任务都大量参与 | **首次生成，后续确定性执行** |
+| UI 改动影响 | 大 | **小（API 契约不变就基本不受影响）** |
+| Token 成本 | 高 | **低** |
+| 速度 | 秒 ~ 几十秒 | **接近原生 API** |
+| 产物 | prompt / browser task | **CLI + skill（可复用、可分享）** |
+| 本质 | Runtime Automation | **Web → Agent 工具编译器** |
+
+## 4. 实现原理
 
 整个流程分为首次封装和日常调用两部分。认证配置只记录 Cookie 名称、URL 和登录规则；
 Cookie、Token 等凭据始终保留在 Chrome 中，只在业务 CLI 进程内短暂使用。

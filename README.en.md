@@ -6,9 +6,13 @@
 
 </div>
 
-`awc` lets AI agents and business CLIs reuse the Chrome session you are
-**already signed in with**. It turns authenticated business sites into reusable
-CLIs plus skills, without storing passwords or launching another headless browser.
+**Internal web apps with no API — now agent-native.**
+
+Login-gated systems that ship a web UI but no agent-friendly API — internal admin panels, release and ops consoles, service-governance tools, legacy back offices, third-party SaaS dashboards — `awc` compiles them into CLI + skill that you **generate once, then run deterministically**.
+
+Your signed-in Chrome is only the **auth bootstrap + API discovery** step, not the runtime. After generation, the agent calls the HTTP API directly — no page reading, no button clicking on every task. Passwords never leave the browser.
+
+> **Where it fits:** `awc` is built for developer laptops and interactive ops consoles; it is not meant for unattended server cron jobs (every call needs a signed-in Chrome session).
 
 ## 1. Quick installation
 
@@ -103,7 +107,23 @@ Examples:
 - [`ruoyi-cli`](example/ruoyi-cli/): real user/role queries and login recovery
   against the [RuoYi online demo](https://vue.ruoyi.vip/index).
 
-## 3. How it works
+## 3. How it differs from browser agents
+
+Projects like Browser Use or Grok Bot make the agent drive a browser. `awc` instead *compiles* a logged-in web system into a CLI the agent can call deterministically. Chrome is used only during the initial build; day-to-day execution goes straight to the HTTP API.
+
+|  | Browser agents (Browser Use / Grok Bot) | `awc` |
+|--|--|--|
+| Target systems | API or no API | **Internal backends with no agent API, only a login-gated web UI** |
+| First-time onboarding | Drive the browser | Drive the browser + API discovery |
+| Day-to-day execution | Read pages / click buttons each time | **Call the HTTP API directly** |
+| LLM involvement | Heavy on every task | **Generate once, run deterministically after** |
+| Impact of UI changes | High | **Low (unaffected as long as the API contract holds)** |
+| Token cost | High | **Low** |
+| Speed | Seconds to tens of seconds | **Close to a native API** |
+| Output artifact | prompt / browser task | **CLI + skill (reusable, shareable)** |
+| In essence | Runtime automation | **Web → Agent tool compiler** |
+
+## 4. How it works
 
 The flow has two phases: generating an integration and using it day to day.
 The auth profile stores only Cookie names, URLs, and login rules. Cookie and
