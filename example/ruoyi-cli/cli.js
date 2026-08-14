@@ -39,7 +39,10 @@ function acquireToken() {
         10
       );
     }
-    throw new CliError("unable to acquire the Chrome session; run: awc sys:status", error.status || 1);
+    const hint = error.status === 2
+      ? "auth profile or arguments invalid; run: awc auth:list"
+      : "run: awc sys:status";
+    throw new CliError(`unable to acquire the Chrome session (awc exit ${error.status ?? "unknown"}); ${hint}`, error.status || 1);
   }
 
   let session;
@@ -184,6 +187,44 @@ function dataScopeLabel(value) {
   })[String(value)] || String(value ?? "");
 }
 
+const BUSINESS_TYPES = {
+  "0": "other",
+  "1": "create",
+  "2": "update",
+  "3": "delete",
+  "4": "grant",
+  "5": "export",
+  "6": "import",
+  "7": "force-logout",
+  "8": "gen-code",
+  "9": "clean",
+};
+
+function logStatusCode(value) {
+  if (value === undefined) return undefined;
+  const normalized = String(value).toLowerCase();
+  if (["0", "success", "ok"].includes(normalized)) return "0";
+  if (["1", "failed", "fail", "error"].includes(normalized)) return "1";
+  throw new CliError("--status must be success, failed, 0, or 1", 2);
+}
+
+function logStatusLabel(value) {
+  return String(value) === "0" ? "success" : "failed";
+}
+
+function businessTypeCode(value) {
+  if (value === undefined) return undefined;
+  const normalized = String(value).toLowerCase();
+  if (/^[0-9]$/.test(normalized)) return normalized;
+  const entry = Object.entries(BUSINESS_TYPES).find(([, label]) => label === normalized);
+  if (entry) return entry[0];
+  throw new CliError(`--business-type must be 0-9 or one of: ${Object.values(BUSINESS_TYPES).join(", ")}`, 2);
+}
+
+function businessTypeLabel(value) {
+  return BUSINESS_TYPES[String(value)] ?? String(value ?? "");
+}
+
 function printJSON(value) {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
 }
@@ -294,6 +335,58 @@ async function roleGet(id, options) {
   ]);
 }
 
+async function operlogList(options) {
+  validateOptions(options, ["title", "oper-name", "business-type", "status", "page", "page-size", "json"]);
+  const body = await request("/monitor/operlog/list", {
+    pageNum: positiveInt(options.page, "page", 1),
+    pageSize: positiveInt(options["page-size"], "page-size", 20, 100),
+    title: options.title,
+    businessType: businessTypeCode(options["business-type"]),
+    operName: options["oper-name"],
+    status: logStatusCode(options.status),
+  });
+  if (options.json) return printJSON(body);
+  console.log(`Operation logs: ${body.total}`);
+  printTable(
+    ["ID", "TITLE", "TYPE", "OPER_NAME", "IP", "STATUS", "COST_MS", "TIME"],
+    body.rows.map((log) => [
+      log.operId,
+      log.title,
+      businessTypeLabel(log.businessType),
+      log.operName,
+      log.operIp || "",
+      logStatusLabel(log.status),
+      log.costTime ?? "",
+      log.operTime || "",
+    ])
+  );
+}
+
+async function loginlogList(options) {
+  validateOptions(options, ["user", "ip", "status", "page", "page-size", "json"]);
+  const body = await request("/monitor/logininfor/list", {
+    pageNum: positiveInt(options.page, "page", 1),
+    pageSize: positiveInt(options["page-size"], "page-size", 20, 100),
+    userName: options.user,
+    ipaddr: options.ip,
+    status: logStatusCode(options.status),
+  });
+  if (options.json) return printJSON(body);
+  console.log(`Login logs: ${body.total}`);
+  printTable(
+    ["ID", "USER", "IP", "LOCATION", "BROWSER", "STATUS", "TIME"],
+    body.rows.map((log) => [
+      log.infoId,
+      log.userName,
+      log.ipaddr || "",
+      log.loginLocation || "",
+      log.browser || "",
+      logStatusLabel(log.status),
+      log.loginTime || "",
+    ])
+  );
+}
+
 async function sessionStatus(options) {
   validateOptions(options, ["json"]);
   const body = await request("/getInfo");
@@ -326,6 +419,15 @@ Read-only commands:
   role:list [--name <name>] [--key <key>] [--status <enabled|disabled>]
             [--page <n>] [--page-size <n>] [--json]
   role:get <role-id> [--json]
+  operlog:list [--title <title>] [--oper-name <name>] [--business-type <0-9>]
+               [--status <success|failed>] [--page <n>] [--page-size <n>] [--json]
+  loginlog:list [--user <name>] [--ip <ip>] [--status <success|failed>]
+                [--page <n>] [--page-size <n>] [--json]
+
+Log rows contain the full detail fields (parameters, results, error messages);
+use --json on the list commands to read them. business-type: 0 other, 1 create,
+2 update, 3 delete, 4 grant, 5 export, 6 import, 7 force-logout, 8 gen-code,
+9 clean.
 
 This CLI intentionally has no create, update, delete, export, authorization,
 trigger, or sync commands.`);
@@ -352,6 +454,12 @@ async function main() {
     case "role:get":
       requirePositionals(positionals, 1, "ruoyi role:get <role-id> [--json]");
       return roleGet(positionals[0], options);
+    case "operlog:list":
+      requirePositionals(positionals, 0, "ruoyi operlog:list [options]");
+      return operlogList(options);
+    case "loginlog:list":
+      requirePositionals(positionals, 0, "ruoyi loginlog:list [options]");
+      return loginlogList(options);
     case "help":
     case "--help":
     case "-h": printHelp(); return;

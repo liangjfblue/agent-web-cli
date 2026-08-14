@@ -15,7 +15,11 @@ function run(...args) {
 }
 
 test("rejects write commands", () => {
-  for (const command of ["user:create", "user:update", "user:delete", "role:delete", "role:authorize"]) {
+  for (const command of [
+    "user:create", "user:update", "user:delete", "user:reset-password", "user:change-status", "user:assign-roles",
+    "role:create", "role:update", "role:delete", "role:change-status", "role:authorize",
+    "operlog:delete", "operlog:clean", "loginlog:delete", "loginlog:clean",
+  ]) {
     const result = run(command, "1");
     assert.equal(result.status, 2, command);
     assert.match(result.stderr, /unknown command/);
@@ -39,6 +43,26 @@ test("requires numeric detail ids", () => {
     const result = run(command, "not-an-id");
     assert.equal(result.status, 2, command);
     assert.match(result.stderr, /requires a numeric/);
+  }
+});
+
+test("validates operation log business type", () => {
+  const result = run("operlog:list", "--business-type", "bogus");
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /must be 0-9 or one of/);
+});
+
+test("validates login log status", () => {
+  const result = run("loginlog:list", "--status", "maybe");
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /must be success, failed, 0, or 1/);
+});
+
+test("rejects unexpected positionals on log lists", () => {
+  for (const command of ["operlog:list", "loginlog:list"]) {
+    const result = run(command, "extra");
+    assert.equal(result.status, 2, command);
+    assert.match(result.stderr, new RegExp(`usage: ruoyi ${command}`));
   }
 });
 

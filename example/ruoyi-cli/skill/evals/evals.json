@@ -15,6 +15,16 @@
       "id": 3,
       "prompt": "RuoYi says browser credentials were rejected. Recover the login and continue the user query.",
       "expected_output": "Run ruoyi login --refresh with a command timeout of at least 330 seconds, tell the user to complete the browser CAPTCHA if needed, then rerun the original user query once; never expose a token."
+    },
+    {
+      "id": 4,
+      "prompt": "List the latest operation logs and tell me what actions admin performed recently.",
+      "expected_output": "Run ruoyi operlog:list, then summarize the title, type, operator, status, cost, and time of the returned rows; use --json only if the full parameters/results fields are needed."
+    },
+    {
+      "id": 5,
+      "prompt": "Check the login logs for the ry user.",
+      "expected_output": "Run ruoyi loginlog:list --user ry and summarize the returned ip, location, browser, status, and time fields."
     }
   ]
 }
